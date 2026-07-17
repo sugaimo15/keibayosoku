@@ -212,6 +212,14 @@ def cmd_scrape_horse_history(args: argparse.Namespace) -> None:
 
 def cmd_predict(args: argparse.Namespace) -> None:
     history = storage.load_all_race_results()
+    horse_histories = storage.load_all_horse_histories()
+    if not horse_histories.empty:
+        # 日付範囲でのバックフィルと馬個別の戦績取得は対象レースが重なりうるため、
+        # (race_id, horse_id)で重複排除してから結合する。
+        combined = pd.concat([history, horse_histories], ignore_index=True)
+        if "race_id" in combined.columns and "horse_id" in combined.columns:
+            combined = combined.drop_duplicates(subset=["race_id", "horse_id"], keep="first")
+        history = combined
     if history.empty:
         print("[predict] 過去データがまだありません。scrape-resultsを先に実行してください。", file=sys.stderr)
 
