@@ -126,6 +126,8 @@ def _dump_debug_html(client: NetkeibaClient, date_str: str) -> None:
         f"(len={len(html)}, 'race_id='含む={has_race_id}, 'RaceList'含む={has_racelist})",
         file=sys.stderr,
     )
+    if len(html) <= 4000:
+        print(f"[debug] {date_str}: 応答本文(短いため全文出力) --->\n{html}\n<--- [debug] 応答本文ここまで", file=sys.stderr)
 
 
 def _safe_fetch_race_ids(client: NetkeibaClient, date_str: str):
