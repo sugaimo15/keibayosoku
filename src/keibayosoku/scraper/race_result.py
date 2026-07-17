@@ -17,9 +17,16 @@ from .http import NetkeibaClient
 
 RACE_RESULT_URL = "https://db.netkeiba.com/race/{race_id}/"
 
-ID_RE = re.compile(r"/(horse|jockey|trainer|owner)/(\w+)/?")
+# horse: /horse/{id}/  だが jockey/trainer は /jockey/result/recent/{id}/ という
+# 形式で "result/recent/" を挟むため、素朴な "次のパス要素" 抽出だと "result" という
+# 固定文字列を誤って拾ってしまう。race_card.pyで見つかったのと同じ問題。
+ID_RE = re.compile(r"/(horse|jockey|trainer|owner)/(?:result/recent/)?(\w+)/?(?:$|[?#])")
 
 # ヘッダーテキスト -> 正規化した列名
+# タイム指数系の列はUIの切替ボタンのラベルまで巻き込んでテキストが連結されるため
+# (例: "ﾀｲﾑ指数タイム指数(通常)タイム指数マスター")、実際に観測された文字列を
+# そのままキーにして分かりやすい名前に寄せている。値自体は会員限定機能のため
+# 現状は "**" (非公開) が入る。
 COLUMN_ALIASES = {
     "着順": "finish_position",
     "枠": "waku",
@@ -31,11 +38,19 @@ COLUMN_ALIASES = {
     "騎手": "jockey",
     "タイム": "time",
     "着差": "margin",
+    "ﾀｲﾑ指数タイム指数(通常)タイム指数マスター": "time_index",
+    "ﾀｲﾑ指数Mタイム指数(通常)タイム指数マスター": "time_index_master",
+    "ｽﾀｰﾄ指数": "start_index",
+    "追走指数": "pace_index",
+    "上がり指数": "last_3f_index",
     "通過": "passing_order",
     "上り": "last_3f",
     "単勝": "win_odds",
     "人気": "popularity",
     "馬体重": "horse_weight",
+    "調教ﾀｲﾑ": "training_time",
+    "厩舎ｺﾒﾝﾄ": "trainer_comment",
+    "備考": "remarks",
     "調教師": "trainer",
     "馬主": "owner",
     "賞金": "prize_money",
@@ -108,7 +123,9 @@ def parse_race_info(soup: BeautifulSoup) -> dict:
     if weather_m:
         info["weather"] = weather_m.group(1)
 
-    track_m = re.search(r"馬場\s*[::]\s*(\S+?)(\s|/|$)", detail_text)
+    # 通常のレースは "馬場 : 良" だが、障害レースは "芝 : 良" / "ダート : 良" と
+    # 馬場種別そのものがラベルになる。
+    track_m = re.search(r"(?:馬場|芝|ダート)\s*[::]\s*(\S+?)(\s|/|$)", detail_text)
     if track_m:
         info["track_condition"] = track_m.group(1)
 
