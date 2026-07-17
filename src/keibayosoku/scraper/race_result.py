@@ -110,14 +110,20 @@ def parse_race_info(soup: BeautifulSoup) -> dict:
     if not detail_text:
         detail_text = intro.get_text(" ", strip=True)
 
-    surface_m = re.search(r"(芝|ダ)(\d{3,4})m", detail_text)
+    # 通常レース: "芝右1800m" / "ダ右外1600m" のように向き・内外の文字が距離の
+    # 直前に挟まる。障害レースは "障芝3380m" のように挟まらない。
+    surface_m = re.search(r"(芝|ダ)([右左内外]{0,2})(\d{3,4})m", detail_text)
     if surface_m:
         info["surface"] = "芝" if surface_m.group(1) == "芝" else "ダート"
-        info["distance_m"] = int(surface_m.group(2))
+        info["distance_m"] = int(surface_m.group(3))
+        dir_char = next((c for c in surface_m.group(2) if c in "右左"), None)
+        if dir_char:
+            info["direction"] = dir_char
 
-    dir_m = re.search(r"[(（]([右左])", detail_text)
-    if dir_m:
-        info["direction"] = dir_m.group(1)
+    if "direction" not in info:
+        dir_m = re.search(r"[(（]([右左])", detail_text)
+        if dir_m:
+            info["direction"] = dir_m.group(1)
 
     weather_m = re.search(r"天候\s*[::]\s*(\S+?)(\s|/|$)", detail_text)
     if weather_m:
