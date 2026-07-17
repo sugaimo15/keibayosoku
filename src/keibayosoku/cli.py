@@ -19,7 +19,7 @@ from .scraper.http import NetkeibaClient, RobotsDisallowedError
 from pathlib import Path
 
 from .scraper.race_card import fetch_race_card
-from .scraper.race_list import fetch_race_ids, fetch_race_list_html
+from .scraper.race_list import fetch_race_ids, fetch_race_list_html, find_sub_url_for_date
 from .scraper.race_result import fetch_race_result
 from .predict.predict_race import predict
 
@@ -104,30 +104,47 @@ def cmd_predict(args: argparse.Namespace) -> None:
         print(f"  -> 保存: {path}")
 
 
+def _dump_one(date_str: str, label: str, html: str) -> None:
+    DEBUG_DIR.mkdir(parents=True, exist_ok=True)
+    path = DEBUG_DIR / f"{label}_{date_str}.html"
+    path.write_text(html, encoding="utf-8")
+
+    has_race_id = "race_id=" in html
+    print(
+        f"[debug] {date_str} ({label}): 生HTMLを保存 -> {path} (len={len(html)}, 'race_id='含む={has_race_id})",
+        file=sys.stderr,
+    )
+    if len(html) <= 4000:
+        print(f"[debug] {date_str} ({label}): 応答本文(短いため全文出力) --->\n{html}\n<--- [debug] 応答本文ここまで", file=sys.stderr)
+
+
 def _dump_debug_html(client: NetkeibaClient, date_str: str) -> None:
     """race_idが1件も見つからない場合に、原因調査用に生HTMLを保存する。
 
     (JS描画/ブロック/セレクタずれ等の切り分け用。debug/はコミットしない一時出力)
+    2段階のAjax取得のどちらで失敗しているか特定できるよう、両段階の結果を保存する。
     """
     try:
-        html = fetch_race_list_html(client, date_str)
+        date_list_html = fetch_race_list_html(client, date_str)
     except Exception as exc:  # noqa: BLE001 - デバッグ用途なので握りつぶして継続
-        print(f"[debug] race_list.html取得にも失敗: {exc}", file=sys.stderr)
+        print(f"[debug] {date_str}: 開催日タブの取得に失敗: {exc}", file=sys.stderr)
         return
 
-    DEBUG_DIR.mkdir(parents=True, exist_ok=True)
-    path = DEBUG_DIR / f"race_list_{date_str}.html"
-    path.write_text(html, encoding="utf-8")
+    _dump_one(date_str, "date_list", date_list_html)
 
-    has_race_id = "race_id=" in html
-    has_racelist = "RaceList" in html
-    print(
-        f"[debug] {date_str}: race_idが0件のため生HTMLを保存 -> {path} "
-        f"(len={len(html)}, 'race_id='含む={has_race_id}, 'RaceList'含む={has_racelist})",
-        file=sys.stderr,
-    )
-    if len(html) <= 4000:
-        print(f"[debug] {date_str}: 応答本文(短いため全文出力) --->\n{html}\n<--- [debug] 応答本文ここまで", file=sys.stderr)
+    sub_url = find_sub_url_for_date(date_list_html, date_str)
+    if sub_url is None:
+        print(f"[debug] {date_str}: 開催日タブに該当日が見つからないため開催なしと判断。", file=sys.stderr)
+        return
+
+    print(f"[debug] {date_str}: race_list_sub.htmlを取得します -> {sub_url}", file=sys.stderr)
+    try:
+        sub_html = client.get(sub_url, encoding="UTF-8")
+    except Exception as exc:  # noqa: BLE001 - デバッグ用途なので握りつぶして継続
+        print(f"[debug] {date_str}: race_list_sub.htmlの取得に失敗: {exc}", file=sys.stderr)
+        return
+
+    _dump_one(date_str, "race_list_sub", sub_html)
 
 
 def _safe_fetch_race_ids(client: NetkeibaClient, date_str: str):
