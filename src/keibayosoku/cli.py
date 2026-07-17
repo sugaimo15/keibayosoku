@@ -1,10 +1,11 @@
 """keibayosoku CLI.
 
 サブコマンド:
-  scrape-results --date YYYYMMDD   指定日に開催されたレースの結果を取得してdata/race_resultsに保存
-  scrape-card     --date YYYYMMDD  指定日に開催されるレースの出馬表を取得してdata/race_cardsに保存
-  predict         --date YYYYMMDD  保存済みの出馬表と過去結果から予測しdata/predictionsに保存
-  daily           --date YYYYMMDD  上記を一括実行 (GitHub Actionsから呼び出す想定)
+  scrape-results   --date YYYYMMDD         指定日に開催されたレースの結果を取得してdata/race_resultsに保存
+  backfill-results --start ... --end ...   指定期間の過去レース結果をまとめて取得(初回の履歴データ構築用)
+  scrape-card      --date YYYYMMDD         指定日に開催されるレースの出馬表を取得してdata/race_cardsに保存
+  predict          --date YYYYMMDD         保存済みの出馬表と過去結果から予測しdata/predictionsに保存
+  daily            --date YYYYMMDD         上記を一括実行 (GitHub Actionsから呼び出す想定)
 """
 from __future__ import annotations
 
@@ -20,7 +21,7 @@ from pathlib import Path
 
 from .scraper.race_card import fetch_race_card, fetch_race_card_html
 from .scraper.race_list import fetch_race_ids, fetch_race_list_html, find_sub_url_for_date
-from .scraper.race_result import fetch_race_result
+from .scraper.race_result import fetch_race_result, fetch_race_result_html
 from .predict.predict_race import predict
 
 DEBUG_DIR = Path(__file__).resolve().parents[2] / "debug"
@@ -35,13 +36,8 @@ def _yesterday_str(base: str) -> str:
     return (d - timedelta(days=1)).strftime("%Y%m%d")
 
 
-def cmd_scrape_results(args: argparse.Namespace) -> None:
-    client = NetkeibaClient(min_interval_sec=args.interval)
-    race_ids = args.race_ids or [item.race_id for item in _safe_fetch_race_ids(client, args.date)]
-    if not race_ids:
-        print(f"[scrape-results] {args.date}: 開催レースが見つかりませんでした。", file=sys.stderr)
-        return
-
+def _save_race_results(client: NetkeibaClient, race_ids: list[str], state: dict) -> int:
+    saved = 0
     for race_id in race_ids:
         try:
             result = fetch_race_result(client, race_id)
@@ -51,8 +47,59 @@ def cmd_scrape_results(args: argparse.Namespace) -> None:
         if not result.entries:
             print(f"[scrape-results] {race_id}: 結果テーブルが見つかりませんでした(未確定の可能性)。", file=sys.stderr)
             continue
+
+        first = result.entries[0]
+        looks_broken = not first.get("finish_position") or not first.get("horse_id")
+        if looks_broken and not state["dumped"]:
+            state["dumped"] = True
+            print(
+                f"[debug] {race_id}: finish_position/horse_idが空のためセレクタ不一致の疑い。原因調査用に生HTMLを保存します。",
+                file=sys.stderr,
+            )
+            try:
+                result_html = fetch_race_result_html(client, race_id)
+                _dump_one(race_id, "race_result", result_html)
+            except Exception as exc:  # noqa: BLE001 - デバッグ用途なので握りつぶして継続
+                print(f"[debug] {race_id}: 結果ページの生HTML取得に失敗: {exc}", file=sys.stderr)
+
         path = storage.save_race_result(result)
+        saved += 1
         print(f"[scrape-results] {race_id}: {len(result.entries)}頭分を保存 -> {path}")
+    return saved
+
+
+def cmd_scrape_results(args: argparse.Namespace) -> None:
+    client = NetkeibaClient(min_interval_sec=args.interval)
+    race_ids = args.race_ids or [item.race_id for item in _safe_fetch_race_ids(client, args.date)]
+    if not race_ids:
+        print(f"[scrape-results] {args.date}: 開催レースが見つかりませんでした。", file=sys.stderr)
+        return
+
+    _save_race_results(client, race_ids, {"dumped": False})
+
+
+def cmd_backfill_results(args: argparse.Namespace) -> None:
+    client = NetkeibaClient(min_interval_sec=args.interval)
+    start = date.fromisoformat(f"{args.start[0:4]}-{args.start[4:6]}-{args.start[6:8]}")
+    end = date.fromisoformat(f"{args.end[0:4]}-{args.end[4:6]}-{args.end[6:8]}")
+    if start > end:
+        raise SystemExit(f"--start ({args.start}) は --end ({args.end}) より前である必要があります。")
+
+    state = {"dumped": False}
+    total_saved = 0
+    days_with_races = 0
+    d = start
+    while d <= end:
+        date_str = d.strftime("%Y%m%d")
+        race_ids = [item.race_id for item in _safe_fetch_race_ids(client, date_str, debug_on_empty=False)]
+        if race_ids:
+            days_with_races += 1
+            total_saved += _save_race_results(client, race_ids, state)
+        else:
+            print(f"[backfill-results] {date_str}: 開催レースが見つかりませんでした。", file=sys.stderr)
+        d += timedelta(days=1)
+
+    print(f"[backfill-results] 完了: {days_with_races}開催日 / 合計{total_saved}レース保存")
 
 
 def cmd_scrape_card(args: argparse.Namespace) -> None:
@@ -163,14 +210,14 @@ def _dump_debug_html(client: NetkeibaClient, date_str: str) -> None:
     _dump_one(date_str, "race_list_sub", sub_html)
 
 
-def _safe_fetch_race_ids(client: NetkeibaClient, date_str: str):
+def _safe_fetch_race_ids(client: NetkeibaClient, date_str: str, debug_on_empty: bool = True):
     try:
         items = fetch_race_ids(client, date_str)
     except RobotsDisallowedError as exc:
         print(f"robots.txtにより拒否されました: {exc}", file=sys.stderr)
         return []
 
-    if not items:
+    if not items and debug_on_empty:
         _dump_debug_html(client, date_str)
     return items
 
@@ -197,6 +244,12 @@ def build_parser() -> argparse.ArgumentParser:
     p_results.add_argument("--race-id", dest="race_ids", action="append", help="race_idを直接指定(複数可)")
     p_results.add_argument("--interval", type=float, default=common_args["interval"])
     p_results.set_defaults(func=cmd_scrape_results)
+
+    p_backfill = sub.add_parser("backfill-results", help="指定期間の過去レース結果をまとめて取得")
+    p_backfill.add_argument("--start", required=True, help="開始日 YYYYMMDD")
+    p_backfill.add_argument("--end", required=True, help="終了日 YYYYMMDD")
+    p_backfill.add_argument("--interval", type=float, default=common_args["interval"])
+    p_backfill.set_defaults(func=cmd_backfill_results)
 
     p_card = sub.add_parser("scrape-card", help="出馬表を取得して保存")
     p_card.add_argument("--date", default=_today_str(), help="YYYYMMDD (デフォルト: 当日)")
