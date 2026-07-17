@@ -47,6 +47,15 @@ jobs:
       - name: Run daily scrape + predict
         run: keibayosoku daily --date ${{ steps.date.outputs.value }}
 
+      - name: Upload debug HTML (only produced when no races are found)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: debug-html-${{ github.run_id }}
+          path: debug/
+          if-no-files-found: ignore
+          retention-days: 7
+
       - name: Commit and push data updates
         run: |
           git config user.name "github-actions[bot]"

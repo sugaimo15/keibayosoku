@@ -17,6 +17,12 @@ class RaceListItem:
     url: str
 
 
+def fetch_race_list_html(client: NetkeibaClient, date: str) -> str:
+    """デバッグ用: kaisai_dateのレース一覧ページの生HTMLを返す。"""
+    url = RACE_LIST_URL.format(date=date)
+    return client.get(url, encoding="EUC-JP")
+
+
 def fetch_race_ids(client: NetkeibaClient, date: str) -> list[RaceListItem]:
     """kaisai_date (YYYYMMDD) に開催されるレースのrace_id一覧を返す。
 

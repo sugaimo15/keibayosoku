@@ -16,10 +16,14 @@ import pandas as pd
 
 from . import storage
 from .scraper.http import NetkeibaClient, RobotsDisallowedError
+from pathlib import Path
+
 from .scraper.race_card import fetch_race_card
-from .scraper.race_list import fetch_race_ids
+from .scraper.race_list import fetch_race_ids, fetch_race_list_html
 from .scraper.race_result import fetch_race_result
 from .predict.predict_race import predict
+
+DEBUG_DIR = Path(__file__).resolve().parents[2] / "debug"
 
 
 def _today_str() -> str:
@@ -100,12 +104,40 @@ def cmd_predict(args: argparse.Namespace) -> None:
         print(f"  -> 保存: {path}")
 
 
+def _dump_debug_html(client: NetkeibaClient, date_str: str) -> None:
+    """race_idが1件も見つからない場合に、原因調査用に生HTMLを保存する。
+
+    (JS描画/ブロック/セレクタずれ等の切り分け用。debug/はコミットしない一時出力)
+    """
+    try:
+        html = fetch_race_list_html(client, date_str)
+    except Exception as exc:  # noqa: BLE001 - デバッグ用途なので握りつぶして継続
+        print(f"[debug] race_list.html取得にも失敗: {exc}", file=sys.stderr)
+        return
+
+    DEBUG_DIR.mkdir(parents=True, exist_ok=True)
+    path = DEBUG_DIR / f"race_list_{date_str}.html"
+    path.write_text(html, encoding="utf-8")
+
+    has_race_id = "race_id=" in html
+    has_racelist = "RaceList" in html
+    print(
+        f"[debug] {date_str}: race_idが0件のため生HTMLを保存 -> {path} "
+        f"(len={len(html)}, 'race_id='含む={has_race_id}, 'RaceList'含む={has_racelist})",
+        file=sys.stderr,
+    )
+
+
 def _safe_fetch_race_ids(client: NetkeibaClient, date_str: str):
     try:
-        return fetch_race_ids(client, date_str)
+        items = fetch_race_ids(client, date_str)
     except RobotsDisallowedError as exc:
         print(f"robots.txtにより拒否されました: {exc}", file=sys.stderr)
         return []
+
+    if not items:
+        _dump_debug_html(client, date_str)
+    return items
 
 
 def cmd_daily(args: argparse.Namespace) -> None:
