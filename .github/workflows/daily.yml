@@ -1,0 +1,60 @@
+name: Daily scrape and predict
+
+on:
+  schedule:
+    # 23:00 UTC = 08:00 JST (JRAの出馬表が発表され始める時間帯を想定)
+    - cron: "0 23 * * *"
+  workflow_dispatch:
+    inputs:
+      date:
+        description: "対象日 (YYYYMMDD, 未指定なら実行日のJST日付)"
+        required: false
+        default: ""
+
+permissions:
+  contents: write
+
+concurrency:
+  group: daily-scrape-predict
+  cancel-in-progress: false
+
+jobs:
+  scrape-and-predict:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install -e .
+
+      - name: Resolve target date (JST)
+        id: date
+        run: |
+          if [ -n "${{ github.event.inputs.date }}" ]; then
+            echo "value=${{ github.event.inputs.date }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "value=$(TZ=Asia/Tokyo date +%Y%m%d)" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Run daily scrape + predict
+        run: keibayosoku daily --date ${{ steps.date.outputs.value }}
+
+      - name: Commit and push data updates
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add data/
+          if git diff --cached --quiet; then
+            echo "No data changes to commit."
+          else
+            git commit -m "Add race data and predictions for ${{ steps.date.outputs.value }}"
+            git push origin HEAD:${{ github.ref_name }}
+          fi
