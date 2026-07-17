@@ -1,11 +1,12 @@
 """keibayosoku CLI.
 
 サブコマンド:
-  scrape-results   --date YYYYMMDD         指定日に開催されたレースの結果を取得してdata/race_resultsに保存
-  backfill-results --start ... --end ...   指定期間の過去レース結果をまとめて取得(初回の履歴データ構築用)
-  scrape-card      --date YYYYMMDD         指定日に開催されるレースの出馬表を取得してdata/race_cardsに保存
-  predict          --date YYYYMMDD         保存済みの出馬表と過去結果から予測しdata/predictionsに保存
-  daily            --date YYYYMMDD         上記を一括実行 (GitHub Actionsから呼び出す想定)
+  scrape-results      --date YYYYMMDD         指定日に開催されたレースの結果を取得してdata/race_resultsに保存
+  backfill-results    --start ... --end ...   指定期間の過去レース結果をまとめて取得(初回の履歴データ構築用)
+  scrape-card         --date YYYYMMDD         指定日に開催されるレースの出馬表を取得してdata/race_cardsに保存
+  scrape-horse-history --race-id ...          出馬表の馬IDから各馬の過去成績を個別に取得してdata/horse_historiesに保存
+  predict             --date YYYYMMDD         保存済みの出馬表と過去結果から予測しdata/predictionsに保存
+  daily               --date YYYYMMDD         上記を一括実行 (GitHub Actionsから呼び出す想定)
 """
 from __future__ import annotations
 
@@ -19,6 +20,7 @@ from . import storage
 from .scraper.http import NetkeibaClient, RobotsDisallowedError
 from pathlib import Path
 
+from .scraper.horse_history import fetch_horse_history, fetch_horse_history_html
 from .scraper.race_card import fetch_race_card, fetch_race_card_html
 from .scraper.race_list import fetch_race_ids, fetch_race_list_html, find_sub_url_for_date
 from .scraper.race_result import fetch_race_result, fetch_race_result_html
@@ -144,6 +146,59 @@ def cmd_scrape_card(args: argparse.Namespace) -> None:
         print(f"[scrape-card] {race_id}: {len(card.entries)}頭分を保存 -> {path}")
 
 
+def cmd_scrape_horse_history(args: argparse.Namespace) -> None:
+    client = NetkeibaClient(min_interval_sec=args.interval)
+
+    horse_ids: list[str] = list(dict.fromkeys(args.horse_ids or []))
+    if args.race_id:
+        matches = sorted(storage.RACE_CARDS_DIR.glob(f"*/{args.race_id}.csv"))
+        if not matches:
+            print(
+                f"[scrape-horse-history] race_id={args.race_id} の出馬表が見つかりません。先にscrape-cardを実行してください。",
+                file=sys.stderr,
+            )
+            return
+        card_df = pd.read_csv(matches[-1])
+        if "horse_id" not in card_df.columns:
+            print(f"[scrape-horse-history] {matches[-1]} にhorse_id列がありません。", file=sys.stderr)
+            return
+        for horse_id in card_df["horse_id"].dropna().astype(str):
+            if horse_id not in horse_ids:
+                horse_ids.append(horse_id)
+
+    if not horse_ids:
+        print("[scrape-horse-history] 対象の馬IDがありません。--race-idまたは--horse-idを指定してください。", file=sys.stderr)
+        return
+
+    dumped_sample = False
+    for horse_id in horse_ids:
+        try:
+            history = fetch_horse_history(client, horse_id)
+        except RobotsDisallowedError as exc:
+            print(f"[scrape-horse-history] {horse_id}: スキップ ({exc})", file=sys.stderr)
+            continue
+        if not history.races:
+            print(f"[scrape-horse-history] {horse_id}: 過去成績が見つかりませんでした(未出走馬の可能性)。", file=sys.stderr)
+            continue
+
+        first = history.races[0]
+        looks_broken = not first.get("finish_position") or not first.get("date")
+        if looks_broken and not dumped_sample:
+            dumped_sample = True
+            print(
+                f"[debug] {horse_id}: finish_position/dateが空のためセレクタ不一致の疑い。原因調査用に生HTMLを保存します。",
+                file=sys.stderr,
+            )
+            try:
+                horse_html = fetch_horse_history_html(client, horse_id)
+                _dump_one(horse_id, "horse_history", horse_html)
+            except Exception as exc:  # noqa: BLE001 - デバッグ用途なので握りつぶして継続
+                print(f"[debug] {horse_id}: 馬ページの生HTML取得に失敗: {exc}", file=sys.stderr)
+
+        path = storage.save_horse_history(history)
+        print(f"[scrape-horse-history] {horse_id} ({history.horse_name}): {len(history.races)}走分を保存 -> {path}")
+
+
 def cmd_predict(args: argparse.Namespace) -> None:
     history = storage.load_all_race_results()
     if history.empty:
@@ -262,6 +317,12 @@ def build_parser() -> argparse.ArgumentParser:
     p_card.add_argument("--race-id", dest="race_ids", action="append", help="race_idを直接指定(複数可)")
     p_card.add_argument("--interval", type=float, default=common_args["interval"])
     p_card.set_defaults(func=cmd_scrape_card)
+
+    p_horse_hist = sub.add_parser("scrape-horse-history", help="出馬表の馬IDから各馬の過去成績を個別に取得")
+    p_horse_hist.add_argument("--race-id", help="出馬表(data/race_cards)から対象馬を特定するrace_id")
+    p_horse_hist.add_argument("--horse-id", dest="horse_ids", action="append", help="馬IDを直接指定(複数可)")
+    p_horse_hist.add_argument("--interval", type=float, default=common_args["interval"])
+    p_horse_hist.set_defaults(func=cmd_scrape_horse_history)
 
     p_predict = sub.add_parser("predict", help="保存済みデータから予測")
     p_predict.add_argument("--date", default=_today_str(), help="YYYYMMDD (デフォルト: 当日)")
