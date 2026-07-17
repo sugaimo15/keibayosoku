@@ -65,7 +65,7 @@ def parse_race_card(race_id: str, html: str) -> RaceCard:
     data_tag = soup.find(class_=lambda c: c and "RaceData01" in c)
     if data_tag:
         detail_text = data_tag.get_text(" ", strip=True)
-        surface_m = re.search(r"(芝|ダ)(\d{3,4})m", detail_text)
+        surface_m = re.search(r"(芝|ダ)[右左内外]{0,2}(\d{3,4})m", detail_text)
         if surface_m:
             surface = "芝" if surface_m.group(1) == "芝" else "ダート"
             distance_m = int(surface_m.group(2))

@@ -70,7 +70,9 @@ def _extract_id(cell) -> str | None:
 
 
 def _split_distance(distance_text: str) -> tuple[str | None, int | None]:
-    m = re.search(r"(芝|ダ)(\d{3,4})", distance_text)
+    # レース結果ページ同様、向きの文字("右"/"左")が距離の直前に挟まる場合がある
+    # (例: "芝右1800")。挟まらない場合(例: "芝1800")もあるため任意扱い。
+    m = re.search(r"(芝|ダ)[外内]?[右左]?(\d{3,4})", distance_text)
     if not m:
         return None, None
     surface = "芝" if m.group(1) == "芝" else "ダート"
