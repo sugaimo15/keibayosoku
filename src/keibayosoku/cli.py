@@ -18,7 +18,7 @@ from . import storage
 from .scraper.http import NetkeibaClient, RobotsDisallowedError
 from pathlib import Path
 
-from .scraper.race_card import fetch_race_card
+from .scraper.race_card import fetch_race_card, fetch_race_card_html
 from .scraper.race_list import fetch_race_ids, fetch_race_list_html, find_sub_url_for_date
 from .scraper.race_result import fetch_race_result
 from .predict.predict_race import predict
@@ -62,6 +62,7 @@ def cmd_scrape_card(args: argparse.Namespace) -> None:
         print(f"[scrape-card] {args.date}: 開催レースが見つかりませんでした。", file=sys.stderr)
         return
 
+    dumped_sample = False
     for race_id in race_ids:
         try:
             card = fetch_race_card(client, race_id)
@@ -71,6 +72,21 @@ def cmd_scrape_card(args: argparse.Namespace) -> None:
         if not card.entries:
             print(f"[scrape-card] {race_id}: 出馬表が見つかりませんでした。", file=sys.stderr)
             continue
+
+        first = card.entries[0]
+        looks_broken = not first.get("horse_number") or not first.get("waku")
+        if looks_broken and not dumped_sample:
+            dumped_sample = True
+            print(
+                f"[debug] {race_id}: waku/horse_numberが空のためセレクタ不一致の疑い。原因調査用に生HTMLを保存します。",
+                file=sys.stderr,
+            )
+            try:
+                card_html = fetch_race_card_html(client, race_id)
+                _dump_one(race_id, "race_card", card_html)
+            except Exception as exc:  # noqa: BLE001 - デバッグ用途なので握りつぶして継続
+                print(f"[debug] {race_id}: 出馬表の生HTML取得に失敗: {exc}", file=sys.stderr)
+
         path = storage.save_race_card(card, args.date)
         print(f"[scrape-card] {race_id}: {len(card.entries)}頭分を保存 -> {path}")
 
