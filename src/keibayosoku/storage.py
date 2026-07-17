@@ -84,6 +84,15 @@ def save_horse_history(history: HorseHistory, base_dir: Path = HORSE_HISTORIES_D
     return path
 
 
+def load_all_horse_histories(base_dir: Path = HORSE_HISTORIES_DIR) -> pd.DataFrame:
+    """保存済みの馬別過去成績を1つのDataFrameにまとめて返す。データが無ければ空DataFrame。"""
+    csv_files = sorted(base_dir.glob("*.csv"))
+    if not csv_files:
+        return pd.DataFrame()
+    frames = [pd.read_csv(f) for f in csv_files]
+    return pd.concat(frames, ignore_index=True)
+
+
 def prediction_path(date: str, race_id: str, base_dir: Path = PREDICTIONS_DIR) -> Path:
     return base_dir / date / f"{race_id}.csv"
 
