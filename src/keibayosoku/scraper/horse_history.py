@@ -13,7 +13,7 @@ from bs4 import BeautifulSoup
 
 from .http import NetkeibaClient
 
-HORSE_URL = "https://db.netkeiba.com/horse/{horse_id}/"
+HORSE_URL = "https://db.netkeiba.com/horse/result/{horse_id}/"
 
 ID_RE = re.compile(r"/(jockey|trainer|race)/(?:result/recent/)?(\w+)/?(?:$|[?#])")
 
@@ -88,8 +88,11 @@ def fetch_horse_history_html(client: NetkeibaClient, horse_id: str) -> str:
 def parse_horse_history(horse_id: str, html: str) -> HorseHistory:
     soup = BeautifulSoup(html, "lxml")
 
+    # horse_title div は英名・現役情報も含めて丸ごとテキスト化されてしまうため、
+    # 馬名だけが入っているh1を優先する。
     horse_name = None
-    name_tag = soup.find(class_="horse_title") or soup.find("h1")
+    title_div = soup.find(class_="horse_title")
+    name_tag = (title_div.find("h1") if title_div else None) or soup.find("h1") or title_div
     if name_tag:
         horse_name = name_tag.get_text(strip=True)
 
