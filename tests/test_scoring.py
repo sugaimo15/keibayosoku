@@ -40,3 +40,19 @@ def test_score_race_card_handles_empty_history():
     scored = score_race_card(card, pd.DataFrame(), distance_m=2000, surface="芝")
     assert len(scored) == 1
     assert scored["predicted_rank"].iloc[0] == 1
+
+
+def test_score_race_card_handles_unparseable_horse_weight():
+    """馬体重が「計不」等で(+n)形式に一致しない場合でもクラッシュしないこと。
+
+    実データで score_race_card(...).abs() が TypeError: bad operand type for
+    abs(): 'NoneType' で落ちたことがあるための回帰テスト。
+    """
+    card = pd.DataFrame(
+        [
+            {"horse_id": "A", "jockey_id": "J1", "horse_name": "Horse A", "horse_weight": "計不", "win_odds": "2.0"},
+            {"horse_id": "B", "jockey_id": "J2", "horse_name": "Horse B", "horse_weight": "480(+2)", "win_odds": "5.0"},
+        ]
+    )
+    scored = score_race_card(card, pd.DataFrame(), distance_m=2000, surface="芝")
+    assert len(scored) == 2

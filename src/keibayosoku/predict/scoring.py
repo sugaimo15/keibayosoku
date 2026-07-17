@@ -154,7 +154,8 @@ def score_race_card(
     df["_aptitude"] = df.get("horse_id", pd.Series(dtype=object)).apply(
         lambda hid: _aptitude_score(history, hid, distance_m, surface) if pd.notna(hid) else None
     )
-    df["_weight_change"] = df.get("horse_weight", pd.Series(dtype=object)).apply(_parse_weight_change).abs()
+    weight_change = df.get("horse_weight", pd.Series(dtype=object)).apply(_parse_weight_change)
+    df["_weight_change"] = pd.to_numeric(weight_change, errors="coerce").abs()
     df["_odds"] = df.get("win_odds", pd.Series(dtype=object)).apply(_parse_odds)
 
     recent_form_score = _normalize(df["_avg_finish_recent"], invert=True)
