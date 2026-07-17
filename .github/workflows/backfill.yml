@@ -36,7 +36,10 @@ jobs:
         run: pip install -e .
 
       - name: Backfill race results
-        run: keibayosoku backfill-results --start ${{ github.event.inputs.start }} --end ${{ github.event.inputs.end }}
+        env:
+          START_DATE: ${{ github.event.inputs.start }}
+          END_DATE: ${{ github.event.inputs.end }}
+        run: keibayosoku backfill-results --start "$START_DATE" --end "$END_DATE"
 
       - name: Upload debug HTML (only produced on selector mismatch)
         if: always()
@@ -49,6 +52,9 @@ jobs:
 
       - name: Commit and push data updates
         if: always()
+        env:
+          START_DATE: ${{ github.event.inputs.start }}
+          END_DATE: ${{ github.event.inputs.end }}
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
@@ -56,6 +62,6 @@ jobs:
           if git diff --cached --quiet; then
             echo "No data changes to commit."
           else
-            git commit -m "Backfill race results ${{ github.event.inputs.start }}-${{ github.event.inputs.end }}"
+            git commit -m "Backfill race results ${START_DATE}-${END_DATE}"
             git push origin HEAD:${{ github.ref_name }}
           fi

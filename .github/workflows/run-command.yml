@@ -1,10 +1,10 @@
-name: Scrape horse history
+name: Run ad-hoc keibayosoku command
 
 on:
   workflow_dispatch:
     inputs:
-      race_id:
-        description: "出馬表から対象馬を特定するrace_id (data/race_cardsに保存済みである必要あり)"
+      command:
+        description: "keibayosoku に渡す引数 (例: scrape-results --race-id 202602010911)"
         required: true
 
 permissions:
@@ -15,7 +15,7 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  scrape-horse-history:
+  run-command:
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
@@ -32,24 +32,22 @@ jobs:
       - name: Install dependencies
         run: pip install -e .
 
-      - name: Scrape horse history
+      - name: Run command
         env:
-          RACE_ID: ${{ github.event.inputs.race_id }}
-        run: keibayosoku scrape-horse-history --race-id "$RACE_ID"
+          KEIBAYOSOKU_ARGS: ${{ github.event.inputs.command }}
+        run: keibayosoku $KEIBAYOSOKU_ARGS
 
       - name: Upload debug HTML (only produced on selector mismatch)
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: debug-html-horse-history-${{ github.run_id }}
+          name: debug-html-run-command-${{ github.run_id }}
           path: debug/
           if-no-files-found: ignore
           retention-days: 7
 
       - name: Commit and push data updates
         if: always()
-        env:
-          RACE_ID: ${{ github.event.inputs.race_id }}
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
@@ -58,6 +56,6 @@ jobs:
           if git diff --cached --quiet; then
             echo "No data changes to commit."
           else
-            git commit -m "Add horse history for race ${RACE_ID}"
+            git commit -m "Run command: ${{ github.event.inputs.command }}"
             git push origin HEAD:${{ github.ref_name }}
           fi
