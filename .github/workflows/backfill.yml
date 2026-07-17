@@ -1,0 +1,61 @@
+name: Backfill past race results
+
+on:
+  workflow_dispatch:
+    inputs:
+      start:
+        description: "開始日 YYYYMMDD"
+        required: true
+      end:
+        description: "終了日 YYYYMMDD"
+        required: true
+
+permissions:
+  contents: write
+
+concurrency:
+  group: daily-scrape-predict
+  cancel-in-progress: false
+
+jobs:
+  backfill-results:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install -e .
+
+      - name: Backfill race results
+        run: keibayosoku backfill-results --start ${{ github.event.inputs.start }} --end ${{ github.event.inputs.end }}
+
+      - name: Upload debug HTML (only produced on selector mismatch)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: debug-html-backfill-${{ github.run_id }}
+          path: debug/
+          if-no-files-found: ignore
+          retention-days: 7
+
+      - name: Commit and push data updates
+        if: always()
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add data/
+          if git diff --cached --quiet; then
+            echo "No data changes to commit."
+          else
+            git commit -m "Backfill race results ${{ github.event.inputs.start }}-${{ github.event.inputs.end }}"
+            git push origin HEAD:${{ github.ref_name }}
+          fi

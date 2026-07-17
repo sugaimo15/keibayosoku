@@ -164,7 +164,12 @@ def parse_race_result(race_id: str, html: str) -> RaceResult:
     )
 
 
-def fetch_race_result(client: NetkeibaClient, race_id: str) -> RaceResult:
+def fetch_race_result_html(client: NetkeibaClient, race_id: str) -> str:
+    """デバッグ用: レース結果ページの生HTMLを返す。"""
     url = RACE_RESULT_URL.format(race_id=race_id)
-    html = client.get(url, encoding="EUC-JP")
+    return client.get(url, encoding="EUC-JP")
+
+
+def fetch_race_result(client: NetkeibaClient, race_id: str) -> RaceResult:
+    html = fetch_race_result_html(client, race_id)
     return parse_race_result(race_id, html)
