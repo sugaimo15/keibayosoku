@@ -150,18 +150,18 @@ def cmd_scrape_horse_history(args: argparse.Namespace) -> None:
     client = NetkeibaClient(min_interval_sec=args.interval)
 
     horse_ids: list[str] = list(dict.fromkeys(args.horse_ids or []))
-    if args.race_id:
-        matches = sorted(storage.RACE_CARDS_DIR.glob(f"*/{args.race_id}.csv"))
+    for race_id in args.race_ids or []:
+        matches = sorted(storage.RACE_CARDS_DIR.glob(f"*/{race_id}.csv"))
         if not matches:
             print(
-                f"[scrape-horse-history] race_id={args.race_id} の出馬表が見つかりません。先にscrape-cardを実行してください。",
+                f"[scrape-horse-history] race_id={race_id} の出馬表が見つかりません。先にscrape-cardを実行してください。",
                 file=sys.stderr,
             )
-            return
+            continue
         card_df = pd.read_csv(matches[-1])
         if "horse_id" not in card_df.columns:
             print(f"[scrape-horse-history] {matches[-1]} にhorse_id列がありません。", file=sys.stderr)
-            return
+            continue
         for horse_id in card_df["horse_id"].dropna().astype(str):
             if horse_id not in horse_ids:
                 horse_ids.append(horse_id)
@@ -338,7 +338,9 @@ def build_parser() -> argparse.ArgumentParser:
     p_card.set_defaults(func=cmd_scrape_card)
 
     p_horse_hist = sub.add_parser("scrape-horse-history", help="出馬表の馬IDから各馬の過去成績を個別に取得")
-    p_horse_hist.add_argument("--race-id", help="出馬表(data/race_cards)から対象馬を特定するrace_id")
+    p_horse_hist.add_argument(
+        "--race-id", dest="race_ids", action="append", help="出馬表(data/race_cards)から対象馬を特定するrace_id(複数可)"
+    )
     p_horse_hist.add_argument("--horse-id", dest="horse_ids", action="append", help="馬IDを直接指定(複数可)")
     p_horse_hist.add_argument("--interval", type=float, default=common_args["interval"])
     p_horse_hist.set_defaults(func=cmd_scrape_horse_history)
