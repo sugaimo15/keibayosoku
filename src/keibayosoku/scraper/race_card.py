@@ -2,6 +2,15 @@
 
 対象URL: https://race.netkeiba.com/race/shutuba.html?race_id={race_id}
 出走前のため着順・タイム等は存在せず、枠番・馬番・馬名・斤量・騎手・厩舎・馬体重(前走比)・オッズ/人気(発表されていれば)を取得する。
+
+実際のマークアップ(2026年7月時点で確認)の注意点:
+  - 枠番/馬番のtdは class="Waku{N} Txt_C" / class="Umaban{N} Txt_C" のように
+    馬番号が結合された動的クラス名になっており、固定の "Waku"/"Umaban" という
+    クラス名では一致しない。
+  - 斤量のtdには専用クラスが無く、性齢(class="Barei")の直後のtdという位置関係
+    でしか特定できない。
+  - 騎手/調教師の詳細ページへのリンクは https://db.netkeiba.com/jockey/result/recent/{id}/
+    のように "result/recent/" を挟む形式で、末尾のセグメントがID。
 """
 from __future__ import annotations
 
@@ -13,7 +22,7 @@ from bs4 import BeautifulSoup
 from .http import NetkeibaClient
 
 RACE_CARD_URL = "https://race.netkeiba.com/race/shutuba.html?race_id={race_id}"
-ID_RE = re.compile(r"/(horse|jockey|trainer)/(\w+)/?")
+ID_RE = re.compile(r"/(horse|jockey|trainer)/(?:result/recent/)?(\w+)/?(?:$|[?#])")
 
 
 @dataclass
@@ -37,6 +46,10 @@ def _extract_id(cell) -> str | None:
         return None
     m = ID_RE.search(a["href"])
     return m.group(2) if m else None
+
+
+def _find_by_class_prefix(row, prefix: str):
+    return row.find("td", class_=lambda c: c and c.startswith(prefix))
 
 
 def parse_race_card(race_id: str, html: str) -> RaceCard:
@@ -65,18 +78,22 @@ def parse_race_card(race_id: str, html: str) -> RaceCard:
             def cell(cls):
                 return row.find(class_=cls)
 
+            barei_cell = cell("Barei")
+            weight_carried_cell = barei_cell.find_next_sibling("td") if barei_cell else None
+            horse_info_cell = cell("HorseInfo") or cell("Horse_Name")
+
             entry = {
-                "waku": _text(cell("Waku")),
-                "horse_number": _text(cell("Umaban")),
-                "horse_name": _text(cell("HorseInfo") or cell("Horse_Name")),
-                "sex_age": _text(cell("Barei")),
-                "weight_carried": _text(cell("Jyuryo")),
+                "waku": _text(_find_by_class_prefix(row, "Waku")),
+                "horse_number": _text(_find_by_class_prefix(row, "Umaban")),
+                "horse_name": _text(horse_info_cell),
+                "sex_age": _text(barei_cell),
+                "weight_carried": _text(weight_carried_cell),
                 "jockey": _text(cell("Jockey")),
                 "trainer": _text(cell("Trainer")),
                 "horse_weight": _text(cell("Weight")),
                 "win_odds": _text(cell("Odds") or cell("Popular")),
             }
-            horse_id = _extract_id(cell("HorseInfo") or cell("Horse_Name"))
+            horse_id = _extract_id(horse_info_cell)
             if horse_id:
                 entry["horse_id"] = horse_id
             jockey_id = _extract_id(cell("Jockey"))
