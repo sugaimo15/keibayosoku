@@ -49,11 +49,17 @@ def _save_race_results(client: NetkeibaClient, race_ids: list[str], state: dict)
             continue
 
         first = result.entries[0]
-        looks_broken = not first.get("finish_position") or not first.get("horse_id")
+        jockey_id = first.get("jockey_id")
+        looks_broken = (
+            not first.get("finish_position")
+            or not first.get("horse_id")
+            or not result.surface
+            or (jockey_id is not None and not str(jockey_id).isdigit())
+        )
         if looks_broken and not state["dumped"]:
             state["dumped"] = True
             print(
-                f"[debug] {race_id}: finish_position/horse_idが空のためセレクタ不一致の疑い。原因調査用に生HTMLを保存します。",
+                f"[debug] {race_id}: finish_position/horse_id/surface/jockey_idにセレクタ不一致の疑い。原因調査用に生HTMLを保存します。",
                 file=sys.stderr,
             )
             try:
