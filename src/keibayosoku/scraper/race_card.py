@@ -98,7 +98,12 @@ def parse_race_card(race_id: str, html: str) -> RaceCard:
     )
 
 
-def fetch_race_card(client: NetkeibaClient, race_id: str) -> RaceCard:
+def fetch_race_card_html(client: NetkeibaClient, race_id: str) -> str:
+    """デバッグ用: 出馬表ページの生HTMLを返す。"""
     url = RACE_CARD_URL.format(race_id=race_id)
-    html = client.get(url, encoding="utf-8")
+    return client.get(url, encoding="utf-8")
+
+
+def fetch_race_card(client: NetkeibaClient, race_id: str) -> RaceCard:
+    html = fetch_race_card_html(client, race_id)
     return parse_race_card(race_id, html)
