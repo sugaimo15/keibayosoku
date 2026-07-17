@@ -179,6 +179,17 @@ def cmd_scrape_horse_history(args: argparse.Namespace) -> None:
             continue
         if not history.races:
             print(f"[scrape-horse-history] {horse_id}: 過去成績が見つかりませんでした(未出走馬の可能性)。", file=sys.stderr)
+            if not dumped_sample:
+                dumped_sample = True
+                print(
+                    f"[debug] {horse_id}: 成績テーブルが0件のためセレクタ不一致の疑い。原因調査用に生HTMLを保存します。",
+                    file=sys.stderr,
+                )
+                try:
+                    horse_html = fetch_horse_history_html(client, horse_id)
+                    _dump_one(horse_id, "horse_history", horse_html)
+                except Exception as exc:  # noqa: BLE001 - デバッグ用途なので握りつぶして継続
+                    print(f"[debug] {horse_id}: 馬ページの生HTML取得に失敗: {exc}", file=sys.stderr)
             continue
 
         first = history.races[0]
