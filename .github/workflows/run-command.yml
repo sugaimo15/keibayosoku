@@ -1,13 +1,10 @@
-name: Backfill past race results
+name: Run ad-hoc keibayosoku command
 
 on:
   workflow_dispatch:
     inputs:
-      start:
-        description: "開始日 YYYYMMDD"
-        required: true
-      end:
-        description: "終了日 YYYYMMDD"
+      command:
+        description: "keibayosoku に渡す引数 (例: scrape-results --race-id 202602010911)"
         required: true
 
 permissions:
@@ -18,9 +15,9 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  backfill-results:
+  run-command:
     runs-on: ubuntu-latest
-    timeout-minutes: 180
+    timeout-minutes: 60
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -35,33 +32,30 @@ jobs:
       - name: Install dependencies
         run: pip install -e .
 
-      - name: Backfill race results
+      - name: Run command
         env:
-          START_DATE: ${{ github.event.inputs.start }}
-          END_DATE: ${{ github.event.inputs.end }}
-        run: keibayosoku backfill-results --start "$START_DATE" --end "$END_DATE"
+          KEIBAYOSOKU_ARGS: ${{ github.event.inputs.command }}
+        run: keibayosoku $KEIBAYOSOKU_ARGS
 
       - name: Upload debug HTML (only produced on selector mismatch)
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: debug-html-backfill-${{ github.run_id }}
+          name: debug-html-run-command-${{ github.run_id }}
           path: debug/
           if-no-files-found: ignore
           retention-days: 7
 
       - name: Commit and push data updates
         if: always()
-        env:
-          START_DATE: ${{ github.event.inputs.start }}
-          END_DATE: ${{ github.event.inputs.end }}
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add data/
+          if [ -d debug/ ]; then git add debug/; fi
           if git diff --cached --quiet; then
             echo "No data changes to commit."
           else
-            git commit -m "Backfill race results ${START_DATE}-${END_DATE}"
+            git commit -m "Run command: ${{ github.event.inputs.command }}"
             git push origin HEAD:${{ github.ref_name }}
           fi

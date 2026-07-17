@@ -1,13 +1,10 @@
-name: Backfill past race results
+name: Scrape horse history
 
 on:
   workflow_dispatch:
     inputs:
-      start:
-        description: "開始日 YYYYMMDD"
-        required: true
-      end:
-        description: "終了日 YYYYMMDD"
+      race_id:
+        description: "出馬表から対象馬を特定するrace_id (data/race_cardsに保存済みである必要あり)"
         required: true
 
 permissions:
@@ -18,9 +15,9 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  backfill-results:
+  scrape-horse-history:
     runs-on: ubuntu-latest
-    timeout-minutes: 180
+    timeout-minutes: 60
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -35,17 +32,16 @@ jobs:
       - name: Install dependencies
         run: pip install -e .
 
-      - name: Backfill race results
+      - name: Scrape horse history
         env:
-          START_DATE: ${{ github.event.inputs.start }}
-          END_DATE: ${{ github.event.inputs.end }}
-        run: keibayosoku backfill-results --start "$START_DATE" --end "$END_DATE"
+          RACE_ID: ${{ github.event.inputs.race_id }}
+        run: keibayosoku scrape-horse-history --race-id "$RACE_ID"
 
       - name: Upload debug HTML (only produced on selector mismatch)
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: debug-html-backfill-${{ github.run_id }}
+          name: debug-html-horse-history-${{ github.run_id }}
           path: debug/
           if-no-files-found: ignore
           retention-days: 7
@@ -53,15 +49,15 @@ jobs:
       - name: Commit and push data updates
         if: always()
         env:
-          START_DATE: ${{ github.event.inputs.start }}
-          END_DATE: ${{ github.event.inputs.end }}
+          RACE_ID: ${{ github.event.inputs.race_id }}
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add data/
+          if [ -d debug/ ]; then git add debug/; fi
           if git diff --cached --quiet; then
             echo "No data changes to commit."
           else
-            git commit -m "Backfill race results ${START_DATE}-${END_DATE}"
+            git commit -m "Add horse history for race ${RACE_ID}"
             git push origin HEAD:${{ github.ref_name }}
           fi
