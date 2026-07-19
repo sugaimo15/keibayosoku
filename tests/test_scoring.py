@@ -1,6 +1,13 @@
 import pandas as pd
 
-from keibayosoku.predict.scoring import build_horse_jockey_stats, score_race_card, _track_condition_score
+from keibayosoku.predict.scoring import (
+    build_horse_jockey_stats,
+    build_horse_running_style_stats,
+    score_race_card,
+    _predict_pace,
+    _running_style_bucket,
+    _track_condition_score,
+)
 
 
 def _history_df():
@@ -91,6 +98,36 @@ def test_score_race_card_uses_track_condition_when_available():
     )
     scored = score_race_card(card, history, track_condition="不良")
     assert scored.loc[scored["horse_name"] == "Horse A", "predicted_rank"].iloc[0] == 1
+
+
+def test_running_style_bucket_classifies_by_corner_position_ratio():
+    # 16頭立てで1コーナー2番手 -> 比率0.125 <= 0.35 なので前め
+    assert _running_style_bucket("2-2-3-4", 16) == "front"
+    # 16頭立てで1コーナー14番手 -> 比率0.875 > 0.35 なので後ろ
+    assert _running_style_bucket("14-13-10-5", 16) == "back"
+    assert _running_style_bucket(None, 16) is None
+    assert _running_style_bucket("2-2", None) is None
+
+
+def test_build_horse_running_style_stats_computes_front_ratio():
+    history = pd.DataFrame(
+        [
+            # horse D: いつも逃げる(前め)
+            {"horse_id": "D", "passing_order": "1-1-1-1", "field_size": 10},
+            {"horse_id": "D", "passing_order": "2-1-1-1", "field_size": 10},
+            # horse E: いつも後方から追い込む
+            {"horse_id": "E", "passing_order": "9-9-8-5", "field_size": 10},
+        ]
+    )
+    stats = build_horse_running_style_stats(history)
+    assert stats.loc["D", "front_ratio"] == 1.0
+    assert stats.loc["E", "front_ratio"] == 0.0
+
+
+def test_predict_pace_fast_when_multiple_front_runners():
+    assert _predict_pace(pd.Series([0.9, 0.8, 0.1, 0.2])) == "fast"
+    assert _predict_pace(pd.Series([0.9, 0.2, 0.1, 0.2])) == "slow"
+    assert _predict_pace(pd.Series([float("nan"), float("nan")])) == "slow"
 
 
 def test_score_race_card_handles_unparseable_horse_weight():

@@ -9,11 +9,18 @@
   - 馬体重増減ペナルティ                        : 10%
   - オッズ/人気スコア (発表されていれば)         : 5%
 
-(補足) 騎手×馬の組み合わせ相性(build_horse_jockey_stats)も試したが、07/18・07/19の
+(補足1) 騎手×馬の組み合わせ相性(build_horse_jockey_stats)も試したが、07/18・07/19の
 実データでリークを除去した上でバックテストしたところ、単勝的中率29.2%→26.2%、
 単勝回収率123.5%→73.4%など全指標で悪化したため、score_race_cardへの組み込みは
 見送っている(組み合わせ自体のレース数が少なく勝率のノイズが大きいことが原因と推測)。
 関数自体は将来の改善(最低レース数によるフィルタ等)のために残してある。
+
+(補足2) 展開(隊列・ペース)適性(build_horse_running_style_stats/_predict_pace)も
+同様に試したが、リークを除去したバックテストで単勝的中率29.2%→27.7%、馬連
+61.2%→58.7%、三連単34.6%→32.4%など8指標中6指標で悪化したため見送っている。
+「前めタイプが2頭以上でハイペース」という判定が粗すぎる(前め度合いの強弱や
+距離帯によるペース傾向の違いを見ていない)ことが原因と推測。関数自体は将来の
+改善のために残してある。
 """
 from __future__ import annotations
 
@@ -34,6 +41,12 @@ WEIGHTS = {
 RECENT_N = 5
 DISTANCE_TOLERANCE_M = 400
 GOOD_TRACK_CONDITIONS = {"良"}
+# 1コーナー通過順位/出走頭数がこの比率以下なら「前め(逃げ・先行)」とみなす。
+FRONT_RUNNER_CORNER_RATIO = 0.35
+# 過去の前め率がこの比率を超える馬を「前めタイプ」の馬として、レースの
+# 展開(隊列)予測時にカウントする。
+FRONT_RUNNER_HISTORY_RATIO = 0.5
+_PASSING_ORDER_SPLIT_RE = re.compile(r"[-‐–—－]")
 
 
 def _to_numeric_finish(series: pd.Series) -> pd.Series:
@@ -126,6 +139,69 @@ def build_horse_jockey_stats(history: pd.DataFrame) -> pd.DataFrame:
             }
         )
     return pd.DataFrame(records).set_index(["horse_id", "jockey_id"])
+
+
+def _first_corner_position(passing_order) -> float | None:
+    """通過順(例: "3-4-5-8")の最初のコーナー通過順位を取り出す。"""
+    if not isinstance(passing_order, str) or not passing_order.strip():
+        return None
+    parts = _PASSING_ORDER_SPLIT_RE.split(passing_order.strip())
+    try:
+        return float(parts[0])
+    except (ValueError, IndexError):
+        return None
+
+
+def _running_style_bucket(passing_order, field_size) -> str | None:
+    """1コーナーの位置取りを「前め(front)」/「後ろ(back)」の2区分に単純化する。
+
+    脚質(逃げ/先行/差し/追込)を細かく4分類するとサンプルが減りノイズが増える
+    (騎手×馬相性の検証で判明した問題と同じ)ため、まず粗い2区分で試す。
+    """
+    pos = _first_corner_position(passing_order)
+    try:
+        size = float(field_size)
+    except (TypeError, ValueError):
+        return None
+    if pos is None or size <= 0:
+        return None
+    return "front" if pos / size <= FRONT_RUNNER_CORNER_RATIO else "back"
+
+
+def build_horse_running_style_stats(history: pd.DataFrame) -> pd.DataFrame:
+    """horse_id別に、過去レースで「前め」の位置取りをした割合を集計する。
+
+    通過順・出走頭数の両方が揃っている行のみ集計対象にする
+    (race_resultsには頭数の列が無いため、主にhorse_historiesのデータが対象になる)。
+    """
+    required = {"horse_id", "passing_order", "field_size"}
+    if history.empty or not required.issubset(history.columns):
+        return pd.DataFrame(columns=["horse_id", "races", "front_ratio"]).set_index("horse_id")
+
+    df = history.copy()
+    df["_style"] = df.apply(
+        lambda r: _running_style_bucket(r.get("passing_order"), r.get("field_size")), axis=1
+    )
+    df = df[df["_style"].notna()]
+    if df.empty:
+        return pd.DataFrame(columns=["horse_id", "races", "front_ratio"]).set_index("horse_id")
+
+    records = []
+    for horse_id, g in df.groupby("horse_id"):
+        races = len(g)
+        front = (g["_style"] == "front").sum()
+        records.append({"horse_id": horse_id, "races": races, "front_ratio": front / races})
+    return pd.DataFrame(records).set_index("horse_id")
+
+
+def _predict_pace(front_ratios: pd.Series) -> str:
+    """出走馬の「前めタイプ」率からこのレースの展開を単純に予測する。
+
+    前めタイプの馬が2頭以上いれば先行争いが起きてハイペースになりやすいと
+    仮定し、0〜1頭ならスローペース(隊列が落ち着く)と仮定する。
+    """
+    front_count = (front_ratios > FRONT_RUNNER_HISTORY_RATIO).sum()
+    return "fast" if front_count >= 2 else "slow"
 
 
 def _aptitude_score(history: pd.DataFrame, horse_id: str, distance_m: float | None, surface: str | None) -> float | None:
