@@ -55,6 +55,13 @@ COLUMN_ALIASES = {
     "馬主": "owner",
     "賞金": "prize_money",
     "賞金(万円)": "prize_money",
+    # race.netkeiba.com速報ページ(race_result_live.py)はdb版と列見出しの
+    # 表記が一部異なる。
+    "単勝オッズ": "win_odds",
+    "後3F": "last_3f",
+    "コーナー通過順": "passing_order",
+    "厩舎": "trainer",
+    "馬体重(増減)": "horse_weight",
 }
 
 

@@ -72,13 +72,11 @@ def parse_race_info_live(soup: BeautifulSoup) -> dict:
         if track_m:
             info["track_condition"] = track_m.group(1)
 
-    data_tag2 = soup.find(class_=lambda c: c and "RaceData02" in c)
-    if data_tag2:
-        text = data_tag2.get_text(" ", strip=True)
-        date_m = re.search(r"(\d{4})年(\d{1,2})月(\d{1,2})日", text)
-        if date_m:
-            y, mo, d = date_m.groups()
-            info["date"] = f"{int(y):04d}-{int(mo):02d}-{int(d):02d}"
+    # RaceData02等の開催情報欄に日付が無い場合もあるため、ページ全体からも探す。
+    date_m = re.search(r"(\d{4})年(\d{1,2})月(\d{1,2})日", soup.get_text(" ", strip=True))
+    if date_m:
+        y, mo, d = date_m.groups()
+        info["date"] = f"{int(y):04d}-{int(mo):02d}-{int(d):02d}"
 
     return info
 
