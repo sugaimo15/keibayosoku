@@ -16,6 +16,7 @@ RACE_RESULTS_DIR = DATA_DIR / "race_results"
 RACE_CARDS_DIR = DATA_DIR / "race_cards"
 PREDICTIONS_DIR = DATA_DIR / "predictions"
 HORSE_HISTORIES_DIR = DATA_DIR / "horse_histories"
+RACE_PAYOUTS_DIR = DATA_DIR / "race_payouts"
 
 
 def race_result_path(race_id: str, base_dir: Path = RACE_RESULTS_DIR) -> Path:
@@ -37,6 +38,23 @@ def save_race_result(result: RaceResult, base_dir: Path = RACE_RESULTS_DIR) -> P
     df.insert(6, "weather", result.weather)
     df.insert(7, "track_condition", result.track_condition)
 
+    df.to_csv(path, index=False, encoding="utf-8-sig")
+    return path
+
+
+def race_payout_path(race_id: str, base_dir: Path = RACE_PAYOUTS_DIR) -> Path:
+    return base_dir / f"{race_id}.csv"
+
+
+def save_race_payouts(result: RaceResult, base_dir: Path = RACE_PAYOUTS_DIR) -> Path | None:
+    """払戻データが無い(db.netkeiba.com由来など)場合は何も保存せずNoneを返す。"""
+    if not result.payouts:
+        return None
+    path = race_payout_path(result.race_id, base_dir)
+    path.parent.mkdir(parents=True, exist_ok=True)
+
+    df = pd.DataFrame(result.payouts)
+    df.insert(0, "race_id", result.race_id)
     df.to_csv(path, index=False, encoding="utf-8-sig")
     return path
 

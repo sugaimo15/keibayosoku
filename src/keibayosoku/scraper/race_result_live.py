@@ -18,6 +18,8 @@ from .race_result import COLUMN_ALIASES, ID_RE, RaceResult
 
 RACE_RESULT_LIVE_URL = "https://race.netkeiba.com/race/result.html?race_id={race_id}"
 
+BET_TYPE_LABELS = ["単勝", "複勝", "枠連", "馬連", "ワイド", "馬単", "三連複", "三連単"]
+
 
 def _normalize_header(text: str) -> str:
     text = text.strip()
@@ -113,10 +115,70 @@ def parse_entries_live(soup: BeautifulSoup) -> list[dict]:
     return entries
 
 
+def _split_multi(text: str) -> list[str]:
+    """複勝/ワイドのように1つのセルに複数の値が改行区切りで入る場合を分割する。"""
+    return [p.strip() for p in re.split(r"[\n]+", text) if p.strip()]
+
+
+def parse_payouts_live(soup: BeautifulSoup) -> list[dict]:
+    """払戻テーブルをパースする。行の先頭セルが単勝/複勝/...のいずれかに完全一致するものを
+    払戻行とみなし(クラス名の変更に強くするため)、組番・払戻金額・人気を抜き出す。
+    複勝/ワイドのように1レースで複数組を払い戻す場合は、組ごとに1レコードにして返す。
+    """
+    payouts: list[dict] = []
+    seen_rows: set[int] = set()
+
+    for label in BET_TYPE_LABELS:
+        for cell in soup.find_all(["th", "td"]):
+            if cell.get_text(strip=True) != label:
+                continue
+            row = cell.find_parent("tr")
+            if row is None or id(row) in seen_rows:
+                continue
+            seen_rows.add(id(row))
+
+            other_cells = [c for c in row.find_all(["th", "td"]) if c is not cell]
+            if not other_cells:
+                continue
+            combo_texts = _split_multi(other_cells[0].get_text("\n", strip=True))
+            amount_texts = (
+                _split_multi(other_cells[1].get_text("\n", strip=True)) if len(other_cells) > 1 else []
+            )
+            popularity_texts = (
+                _split_multi(other_cells[2].get_text("\n", strip=True)) if len(other_cells) > 2 else []
+            )
+
+            n = max(len(combo_texts), len(amount_texts)) or 1
+            for i in range(n):
+                combo = combo_texts[i] if i < len(combo_texts) else None
+                amount_text = amount_texts[i] if i < len(amount_texts) else None
+                amount = None
+                if amount_text:
+                    m = re.search(r"[\d,]+", amount_text)
+                    if m:
+                        amount = int(m.group(0).replace(",", ""))
+                popularity_text = popularity_texts[i] if i < len(popularity_texts) else None
+                popularity = None
+                if popularity_text:
+                    m = re.search(r"\d+", popularity_text)
+                    if m:
+                        popularity = int(m.group(0))
+                payouts.append(
+                    {
+                        "bet_type": label,
+                        "combination": combo,
+                        "amount": amount,
+                        "popularity": popularity,
+                    }
+                )
+    return payouts
+
+
 def parse_race_result_live(race_id: str, html: str) -> RaceResult:
     soup = BeautifulSoup(html, "lxml")
     info = parse_race_info_live(soup)
     entries = parse_entries_live(soup)
+    payouts = parse_payouts_live(soup)
     return RaceResult(
         race_id=race_id,
         race_name=info.get("race_name"),
@@ -127,6 +189,7 @@ def parse_race_result_live(race_id: str, html: str) -> RaceResult:
         weather=info.get("weather"),
         track_condition=info.get("track_condition"),
         entries=entries,
+        payouts=payouts,
     )
 
 

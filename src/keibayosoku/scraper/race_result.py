@@ -77,6 +77,9 @@ class RaceResult:
     weather: str | None = None
     track_condition: str | None = None
     entries: list[dict] = field(default_factory=list)
+    # 単勝/複勝/馬連/ワイド/馬単/三連複/三連単の払戻。db.netkeiba.com側は現状未対応で、
+    # race_result_live.py (race.netkeiba.com速報ページ) からのみ入る。
+    payouts: list[dict] = field(default_factory=list)
 
 
 def _normalize_header(text: str) -> str:
