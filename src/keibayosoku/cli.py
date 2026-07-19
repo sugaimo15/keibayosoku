@@ -87,9 +87,24 @@ def _save_race_results(client: NetkeibaClient, race_ids: list[str], state: dict)
             except Exception as exc:  # noqa: BLE001 - デバッグ用途なので握りつぶして継続
                 print(f"[debug] {race_id}: 結果ページの生HTML取得に失敗: {exc}", file=sys.stderr)
 
+        if source == "live" and not result.payouts and not state["dumped_payout"]:
+            state["dumped_payout"] = True
+            print(
+                f"[debug] {race_id}: 払戻テーブルが0件のためセレクタ不一致の疑い。原因調査用に生HTMLを保存します。",
+                file=sys.stderr,
+            )
+            try:
+                result_html = fetch_race_result_live_html(client, race_id)
+                _dump_one(race_id, "race_payout", result_html)
+            except Exception as exc:  # noqa: BLE001 - デバッグ用途なので握りつぶして継続
+                print(f"[debug] {race_id}: 速報ページの生HTML取得に失敗: {exc}", file=sys.stderr)
+
         path = storage.save_race_result(result)
         saved += 1
         print(f"[scrape-results] {race_id}: {len(result.entries)}頭分を保存 -> {path}")
+        payout_path = storage.save_race_payouts(result)
+        if payout_path:
+            print(f"[scrape-results] {race_id}: 払戻{len(result.payouts)}件を保存 -> {payout_path}")
     return saved
 
 
@@ -100,7 +115,7 @@ def cmd_scrape_results(args: argparse.Namespace) -> None:
         print(f"[scrape-results] {args.date}: 開催レースが見つかりませんでした。", file=sys.stderr)
         return
 
-    _save_race_results(client, race_ids, {"dumped": False})
+    _save_race_results(client, race_ids, {"dumped": False, "dumped_payout": False})
 
 
 def cmd_backfill_results(args: argparse.Namespace) -> None:
@@ -110,7 +125,7 @@ def cmd_backfill_results(args: argparse.Namespace) -> None:
     if start > end:
         raise SystemExit(f"--start ({args.start}) は --end ({args.end}) より前である必要があります。")
 
-    state = {"dumped": False}
+    state = {"dumped": False, "dumped_payout": False}
     total_saved = 0
     days_with_races = 0
     d = start
