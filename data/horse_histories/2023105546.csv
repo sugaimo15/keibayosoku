@@ -1,0 +1,3 @@
+﻿horse_id,horse_name,date,venue,weather,race_number,race_name,race_id,映像,field_size,waku,horse_number,win_odds,popularity,finish_position,jockey,jockey_id,weight_carried,distance,水分量,track_condition,馬場指数,time,margin,ﾀｲﾑ指数タイム指数(通常)タイム指数マスター,ﾀｲﾑ指数Mタイム指数(通常)タイム指数マスター,ｽﾀｰﾄ指数,追走指数,上がり指数,passing_order,pace,last_3f,horse_weight,trainer_comment,remarks,winner_or_second,prize_money,surface,distance_m
+2023105546,ボールドフロント,2025/12/28,5阪神8,晴,1,2歳未勝利,202509050801,,13,6,8,24.4,6,8,吉田隼人,01095,56,ダ1800,,良,-12,1:58.5,3.2,38,38,91,80,62,5-6-4-5,37.6-38.7,41.4,434(-8),,,ミヤジオズ,,ダート,1800
+2023105546,ボールドフロント,2025/12/06,5中山1,晴,5,2歳新馬,202506050105,,18,1,2,66.4,10,12,丹内祐次,01091,56,芝2000,,良,**,2:03.0,1.9,**,**,**,**,**,4-4-7-8,36.4-34.9,36.3,442(0),,,ゴディアーモ,,芝,2000

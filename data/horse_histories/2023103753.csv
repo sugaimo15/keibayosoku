@@ -1,0 +1,3 @@
+﻿horse_id,horse_name,date,venue,weather,race_number,race_name,race_id,映像,field_size,waku,horse_number,win_odds,popularity,finish_position,jockey,jockey_id,weight_carried,distance,水分量,track_condition,馬場指数,time,margin,ﾀｲﾑ指数タイム指数(通常)タイム指数マスター,ﾀｲﾑ指数Mタイム指数(通常)タイム指数マスター,ｽﾀｰﾄ指数,追走指数,上がり指数,passing_order,pace,last_3f,horse_weight,trainer_comment,remarks,winner_or_second,prize_money,surface,distance_m
+2023103753,イントゥザウインド,2026/07/04,2福島3,曇,3,3歳未勝利,202603020303,,15,7,12,2.2,2,3,坂井瑠星,01163,57,ダ1700,,重,-16,1:47.3,0.1,68,68,97,75,98,3-3-3-2,30.7-37.6,37.4,420(-6),,,オリジナルアポジー,150.0,ダート,1700
+2023103753,イントゥザウインド,2026/06/13,3東京3,晴,7,3歳未勝利,202605030307,,16,4,7,14.7,7,2,ゴンサル,05675,57,ダ1600,,稍,**,1:37.3,0.1,**,**,**,**,**,12-12,35.2-36.9,35.9,426(0),,,ロケットパンチ,230.0,ダート,1600

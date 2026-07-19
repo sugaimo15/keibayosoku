@@ -1,0 +1,3 @@
+﻿horse_id,horse_name,date,venue,weather,race_number,race_name,race_id,映像,field_size,waku,horse_number,win_odds,popularity,finish_position,jockey,jockey_id,weight_carried,distance,水分量,track_condition,馬場指数,time,margin,ﾀｲﾑ指数タイム指数(通常)タイム指数マスター,ﾀｲﾑ指数Mタイム指数(通常)タイム指数マスター,ｽﾀｰﾄ指数,追走指数,上がり指数,passing_order,pace,last_3f,horse_weight,trainer_comment,remarks,winner_or_second,prize_money,surface,distance_m
+2023100417,エイシンキタールン,2026/03/01,1阪神4,晴,1,3歳未勝利,202609010401,,13,8,13,3.6,2,11,岩田望来,01174,55,ダ1800,,良,-12,1:58.0,3.6,41,41,102,90,55,3-4-5-5,36.6-38.9,42.0,514(-8),,,モスカテル,,ダート,1800
+2023100417,エイシンキタールン,2026/02/07,2京都3,曇,4,3歳新馬,202608020304,,16,4,7,4.5,1,5,団野大成,01180,55,ダ1800,,良,**,1:55.7,1.9,**,**,**,**,**,3-3-3-3,37.0-37.9,39.3,522(0),,,アレンスター,65.0,ダート,1800
