@@ -24,6 +24,7 @@ from .scraper.horse_history import fetch_horse_history, fetch_horse_history_html
 from .scraper.race_card import fetch_race_card, fetch_race_card_html
 from .scraper.race_list import fetch_race_ids, fetch_race_list_html, find_sub_url_for_date
 from .scraper.race_result import fetch_race_result, fetch_race_result_html
+from .scraper.race_result_live import fetch_race_result_live, fetch_race_result_live_html
 from .predict.predict_race import predict
 
 DEBUG_DIR = Path(__file__).resolve().parents[2] / "debug"
@@ -41,11 +42,23 @@ def _yesterday_str(base: str) -> str:
 def _save_race_results(client: NetkeibaClient, race_ids: list[str], state: dict) -> int:
     saved = 0
     for race_id in race_ids:
+        source = "db"
         try:
             result = fetch_race_result(client, race_id)
         except RobotsDisallowedError as exc:
             print(f"[scrape-results] {race_id}: スキップ ({exc})", file=sys.stderr)
             continue
+
+        if not result.entries:
+            # db.netkeiba.com(データベース版)はレース終了後しばらく経ってから
+            # 反映されるため、レース当日はrace.netkeiba.com側の速報ページを試す。
+            source = "live"
+            try:
+                result = fetch_race_result_live(client, race_id)
+            except RobotsDisallowedError as exc:
+                print(f"[scrape-results] {race_id}: 速報ページもスキップ ({exc})", file=sys.stderr)
+                continue
+
         if not result.entries:
             print(f"[scrape-results] {race_id}: 結果テーブルが見つかりませんでした(未確定の可能性)。", file=sys.stderr)
             continue
@@ -65,7 +78,11 @@ def _save_race_results(client: NetkeibaClient, race_ids: list[str], state: dict)
                 file=sys.stderr,
             )
             try:
-                result_html = fetch_race_result_html(client, race_id)
+                result_html = (
+                    fetch_race_result_live_html(client, race_id)
+                    if source == "live"
+                    else fetch_race_result_html(client, race_id)
+                )
                 _dump_one(race_id, "race_result", result_html)
             except Exception as exc:  # noqa: BLE001 - デバッグ用途なので握りつぶして継続
                 print(f"[debug] {race_id}: 結果ページの生HTML取得に失敗: {exc}", file=sys.stderr)
