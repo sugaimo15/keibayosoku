@@ -3,10 +3,16 @@
 
 スコアの内訳(重みは経験則による初期値。data/predictions蓄積後にチューニングする想定):
   - 直近成績スコア (過去5走の平均着順)          : 40%
-  - 騎手勝率スコア                              : 25%
+  - 騎手勝率スコア (騎手全体の通算勝率)         : 25%
   - 同条件(距離帯・馬場種別)適性スコア           : 20%
   - 馬体重増減ペナルティ                        : 10%
   - オッズ/人気スコア (発表されていれば)         : 5%
+
+(補足) 騎手×馬の組み合わせ相性(build_horse_jockey_stats)も試したが、07/18・07/19の
+実データでリークを除去した上でバックテストしたところ、単勝的中率29.2%→26.2%、
+単勝回収率123.5%→73.4%など全指標で悪化したため、score_race_cardへの組み込みは
+見送っている(組み合わせ自体のレース数が少なく勝率のノイズが大きいことが原因と推測)。
+関数自体は将来の改善(最低レース数によるフィルタ等)のために残してある。
 """
 from __future__ import annotations
 
@@ -84,6 +90,39 @@ def build_jockey_stats(history: pd.DataFrame) -> pd.DataFrame:
             }
         )
     return pd.DataFrame(records).set_index("jockey_id")
+
+
+def build_horse_jockey_stats(history: pd.DataFrame) -> pd.DataFrame:
+    """(horse_id, jockey_id)の組み合わせ別に成績を集計する。
+
+    同じ馬に同じ騎手が乗り続けている場合の相性を見るためのもの。組み合わせ自体の
+    レース数が少ないことが多いため、勝率のノイズが大きい点には注意(_normalizeの
+    NaN埋めにより、組み合わせ実績が無い馬は他馬の平均的なスコアになる)。
+    """
+    if history.empty or "horse_id" not in history.columns or "jockey_id" not in history.columns:
+        return pd.DataFrame(columns=["horse_id", "jockey_id", "races", "win_rate", "place_rate"]).set_index(
+            ["horse_id", "jockey_id"]
+        )
+
+    df = history.copy()
+    df["finish_num"] = _to_numeric_finish(df["finish_position"])
+
+    records = []
+    for (horse_id, jockey_id), g in df.groupby(["horse_id", "jockey_id"]):
+        finishes = g["finish_num"].dropna()
+        races = len(g)
+        wins = (finishes == 1).sum()
+        places = (finishes <= 3).sum()
+        records.append(
+            {
+                "horse_id": horse_id,
+                "jockey_id": jockey_id,
+                "races": races,
+                "win_rate": wins / races if races else 0.0,
+                "place_rate": places / races if races else 0.0,
+            }
+        )
+    return pd.DataFrame(records).set_index(["horse_id", "jockey_id"])
 
 
 def _aptitude_score(history: pd.DataFrame, horse_id: str, distance_m: float | None, surface: str | None) -> float | None:

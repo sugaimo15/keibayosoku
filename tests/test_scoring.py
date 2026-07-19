@@ -1,6 +1,6 @@
 import pandas as pd
 
-from keibayosoku.predict.scoring import score_race_card
+from keibayosoku.predict.scoring import build_horse_jockey_stats, score_race_card
 
 
 def _history_df():
@@ -40,6 +40,15 @@ def test_score_race_card_handles_empty_history():
     scored = score_race_card(card, pd.DataFrame(), distance_m=2000, surface="芝")
     assert len(scored) == 1
     assert scored["predicted_rank"].iloc[0] == 1
+
+
+def test_build_horse_jockey_stats_computes_combo_win_rate():
+    history = _history_df()
+    stats = build_horse_jockey_stats(history)
+
+    assert stats.loc[("A", "J1"), "races"] == 3
+    assert stats.loc[("A", "J1"), "win_rate"] == 2 / 3
+    assert stats.loc[("B", "J2"), "win_rate"] == 0.0
 
 
 def test_score_race_card_handles_unparseable_horse_weight():
