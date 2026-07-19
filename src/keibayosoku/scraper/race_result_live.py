@@ -65,6 +65,13 @@ def parse_race_info_live(soup: BeautifulSoup) -> dict:
             dir_char = next((c for c in surface_m.group(2) if c in "右左"), None)
             if dir_char:
                 info["direction"] = dir_char
+        else:
+            # 障害レースは速報ページでは "障2860m (芝)" のように距離の直後に
+            # "障"、馬場種別は後ろの括弧内、という db版とは異なる並びになる。
+            hurdle_m = re.search(r"障\s*(\d{3,4})m\s*[(（]\s*(芝|ダート|ダ)\s*[)）]", detail_text)
+            if hurdle_m:
+                info["distance_m"] = int(hurdle_m.group(1))
+                info["surface"] = "ダート" if hurdle_m.group(2) in ("ダ", "ダート") else "芝"
 
         weather_m = re.search(r"天候\s*[::]\s*(\S+?)(\s|/|$)", detail_text)
         if weather_m:
@@ -148,9 +155,20 @@ def parse_payouts_live(soup: BeautifulSoup) -> list[dict]:
                 _split_multi(other_cells[2].get_text("\n", strip=True)) if len(other_cells) > 2 else []
             )
 
-            n = max(len(combo_texts), len(amount_texts)) or 1
+            # 枠連/馬連/ワイド/馬単/三連複/三連単は組番が複数行(馬番ごと)に分かれて
+            # 入っているため、払戻件数(amount_texts)に合わせて均等にグループ化し、
+            # 同じ組の馬番同士を1レコードにまとめる。単勝/複勝は常に1頭=1組なので
+            # group_size=1のまま変わらない。
+            n = len(amount_texts) or 1
+            if combo_texts and n and len(combo_texts) % n == 0:
+                group_size = len(combo_texts) // n
+            else:
+                group_size = 1
+                n = max(len(combo_texts), len(amount_texts), 1)
+
             for i in range(n):
-                combo = combo_texts[i] if i < len(combo_texts) else None
+                group = combo_texts[i * group_size : (i + 1) * group_size]
+                combo = "-".join(group) if group else None
                 amount_text = amount_texts[i] if i < len(amount_texts) else None
                 amount = None
                 if amount_text:
