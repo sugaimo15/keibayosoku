@@ -1,6 +1,6 @@
 import pandas as pd
 
-from keibayosoku.predict.scoring import build_horse_jockey_stats, score_race_card
+from keibayosoku.predict.scoring import build_horse_jockey_stats, score_race_card, _track_condition_score
 
 
 def _history_df():
@@ -49,6 +49,48 @@ def test_build_horse_jockey_stats_computes_combo_win_rate():
     assert stats.loc[("A", "J1"), "races"] == 3
     assert stats.loc[("A", "J1"), "win_rate"] == 2 / 3
     assert stats.loc[("B", "J2"), "win_rate"] == 0.0
+
+
+def test_track_condition_score_prefers_matching_bucket():
+    history = pd.DataFrame(
+        [
+            # horse C: 良馬場は不振、道悪(稍重/不良)は好走 = 道悪巧者
+            {"horse_id": "C", "finish_position": "10", "track_condition": "良"},
+            {"horse_id": "C", "finish_position": "9", "track_condition": "良"},
+            {"horse_id": "C", "finish_position": "1", "track_condition": "不良"},
+            {"horse_id": "C", "finish_position": "2", "track_condition": "稍重"},
+        ]
+    )
+    good_score = _track_condition_score(history, "C", "良")
+    off_score = _track_condition_score(history, "C", "不良")
+    assert good_score == 9.5
+    assert off_score == 1.5
+
+
+def test_track_condition_score_none_when_not_announced():
+    history = pd.DataFrame([{"horse_id": "C", "finish_position": "1", "track_condition": "良"}])
+    assert _track_condition_score(history, "C", None) is None
+
+
+def test_score_race_card_uses_track_condition_when_available():
+    history = pd.DataFrame(
+        [
+            # 道悪巧者(不良で好走、良で不振)
+            {"horse_id": "A", "jockey_id": "J1", "date": "2025-01-01", "finish_position": "8", "track_condition": "良"},
+            {"horse_id": "A", "jockey_id": "J1", "date": "2025-02-01", "finish_position": "1", "track_condition": "不良"},
+            # 良馬場巧者(良で好走、不良で不振)
+            {"horse_id": "B", "jockey_id": "J2", "date": "2025-01-01", "finish_position": "1", "track_condition": "良"},
+            {"horse_id": "B", "jockey_id": "J2", "date": "2025-02-01", "finish_position": "8", "track_condition": "不良"},
+        ]
+    )
+    card = pd.DataFrame(
+        [
+            {"horse_id": "A", "jockey_id": "J1", "horse_name": "Horse A", "horse_weight": "480(0)", "win_odds": "5.0"},
+            {"horse_id": "B", "jockey_id": "J2", "horse_name": "Horse B", "horse_weight": "480(0)", "win_odds": "5.0"},
+        ]
+    )
+    scored = score_race_card(card, history, track_condition="不良")
+    assert scored.loc[scored["horse_name"] == "Horse A", "predicted_rank"].iloc[0] == 1
 
 
 def test_score_race_card_handles_unparseable_horse_weight():

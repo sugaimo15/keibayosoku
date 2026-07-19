@@ -4,7 +4,8 @@
 スコアの内訳(重みは経験則による初期値。data/predictions蓄積後にチューニングする想定):
   - 直近成績スコア (過去5走の平均着順)          : 40%
   - 騎手勝率スコア (騎手全体の通算勝率)         : 25%
-  - 同条件(距離帯・馬場種別)適性スコア           : 20%
+  - 同条件(距離帯・馬場種別)適性スコア           : 15%
+  - 馬場状態(良/それ以外)適性スコア             : 5%
   - 馬体重増減ペナルティ                        : 10%
   - オッズ/人気スコア (発表されていれば)         : 5%
 
@@ -24,13 +25,15 @@ import pandas as pd
 WEIGHTS = {
     "recent_form": 0.40,
     "jockey": 0.25,
-    "aptitude": 0.20,
+    "aptitude": 0.15,
+    "track_condition": 0.05,
     "weight_change": 0.10,
     "odds": 0.05,
 }
 
 RECENT_N = 5
 DISTANCE_TOLERANCE_M = 400
+GOOD_TRACK_CONDITIONS = {"良"}
 
 
 def _to_numeric_finish(series: pd.Series) -> pd.Series:
@@ -141,6 +144,38 @@ def _aptitude_score(history: pd.DataFrame, horse_id: str, distance_m: float | No
     return float(finishes.mean())
 
 
+def _track_condition_bucket(track_condition) -> str | None:
+    """馬場状態を「良」/「それ以外(稍重・重・不良)」の2区分に単純化する。
+
+    細かく区分するほど1頭あたりのサンプル数が減ってノイズが増える
+    (騎手×馬相性の検証で判明した問題と同じ)ため、まず粗い2区分で試す。
+    """
+    if not isinstance(track_condition, str) or not track_condition:
+        return None
+    return "good" if track_condition in GOOD_TRACK_CONDITIONS else "off"
+
+
+def _track_condition_score(
+    history: pd.DataFrame, horse_id: str, track_condition: str | None
+) -> float | None:
+    bucket = _track_condition_bucket(track_condition)
+    if (
+        history.empty
+        or bucket is None
+        or "horse_id" not in history.columns
+        or "track_condition" not in history.columns
+    ):
+        return None
+    g = history[history["horse_id"] == horse_id].copy()
+    g = g[g["track_condition"].apply(_track_condition_bucket) == bucket]
+    if g.empty:
+        return None
+    finishes = _to_numeric_finish(g["finish_position"]).dropna()
+    if finishes.empty:
+        return None
+    return float(finishes.mean())
+
+
 def _parse_weight_change(horse_weight: str) -> float | None:
     if not isinstance(horse_weight, str):
         return None
@@ -174,11 +209,14 @@ def score_race_card(
     history: pd.DataFrame,
     distance_m: float | None = None,
     surface: str | None = None,
+    track_condition: str | None = None,
 ) -> pd.DataFrame:
     """出馬表DataFrameに予測スコアと予測着順を付与して返す。
 
     card_dfは scraper.race_card.RaceCard.entries から作ったDataFrameを想定。
     historyは storage.load_all_race_results() で読み込んだ過去結果。
+    track_conditionはレース当日発表される馬場状態(良/稍重/重/不良)。
+    発表前でNoneの場合は馬場状態スコアが全馬0.5(中立)になる。
     """
     df = card_df.copy()
     horse_stats = build_horse_stats(history)
@@ -193,6 +231,9 @@ def score_race_card(
     df["_aptitude"] = df.get("horse_id", pd.Series(dtype=object)).apply(
         lambda hid: _aptitude_score(history, hid, distance_m, surface) if pd.notna(hid) else None
     )
+    df["_track_condition"] = df.get("horse_id", pd.Series(dtype=object)).apply(
+        lambda hid: _track_condition_score(history, hid, track_condition) if pd.notna(hid) else None
+    )
     weight_change = df.get("horse_weight", pd.Series(dtype=object)).apply(_parse_weight_change)
     df["_weight_change"] = pd.to_numeric(weight_change, errors="coerce").abs()
     df["_odds"] = df.get("win_odds", pd.Series(dtype=object)).apply(_parse_odds)
@@ -200,6 +241,7 @@ def score_race_card(
     recent_form_score = _normalize(df["_avg_finish_recent"], invert=True)
     jockey_score = _normalize(df["_jockey_win_rate"], invert=False)
     aptitude_score = _normalize(df["_aptitude"], invert=True)
+    track_condition_score = _normalize(df["_track_condition"], invert=True)
     weight_change_score = _normalize(df["_weight_change"], invert=True)
     odds_score = _normalize(df["_odds"], invert=True)
 
@@ -207,6 +249,7 @@ def score_race_card(
         WEIGHTS["recent_form"] * recent_form_score
         + WEIGHTS["jockey"] * jockey_score
         + WEIGHTS["aptitude"] * aptitude_score
+        + WEIGHTS["track_condition"] * track_condition_score
         + WEIGHTS["weight_change"] * weight_change_score
         + WEIGHTS["odds"] * odds_score
     )

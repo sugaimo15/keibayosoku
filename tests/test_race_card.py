@@ -12,6 +12,7 @@ def test_parse_race_card():
     assert card.race_name == "サンプルステークス"
     assert card.surface == "ダート"
     assert card.distance_m == 1200
+    assert card.track_condition == "稍重"
     assert len(card.entries) == 3
 
     first = card.entries[0]
@@ -30,3 +31,14 @@ def test_parse_race_card():
     assert second["weight_carried"] == "56.0"
     assert second["jockey_id"] == "05678"
     assert second["trainer_id"] == "02222"
+
+
+def test_parse_race_card_missing_track_condition():
+    """発走当日の朝より前など、馬場状態がまだ発表されていない場合はNoneになること。"""
+    html = """
+    <div class="RaceName">サンプルステークス</div>
+    <div class="RaceData01">15:35発走 / ダ1200m (右)</div>
+    <table class="Shutuba_Table"></table>
+    """
+    card = parse_race_card("202506050812", html)
+    assert card.track_condition is None

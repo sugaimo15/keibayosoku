@@ -31,6 +31,7 @@ class RaceCard:
     race_name: str | None = None
     distance_m: int | None = None
     surface: str | None = None
+    track_condition: str | None = None
     entries: list[dict] = field(default_factory=list)
 
 
@@ -62,6 +63,7 @@ def parse_race_card(race_id: str, html: str) -> RaceCard:
 
     distance_m = None
     surface = None
+    track_condition = None
     data_tag = soup.find(class_=lambda c: c and "RaceData01" in c)
     if data_tag:
         detail_text = data_tag.get_text(" ", strip=True)
@@ -69,6 +71,12 @@ def parse_race_card(race_id: str, html: str) -> RaceCard:
         if surface_m:
             surface = "芝" if surface_m.group(1) == "芝" else "ダート"
             distance_m = int(surface_m.group(2))
+
+        # 馬場状態はレース当日の朝以降に発表されるため、発表前は取得できない
+        # (その場合はNoneのまま。predict側は距離・馬場種別と同様に欠損を許容する)。
+        track_m = re.search(r"(?:馬場|芝|ダート)\s*[::]\s*(\S+?)(\s|/|$)", detail_text)
+        if track_m:
+            track_condition = track_m.group(1)
 
     table = soup.find(class_=lambda c: c and "Shutuba_Table" in c)
     entries: list[dict] = []
@@ -111,6 +119,7 @@ def parse_race_card(race_id: str, html: str) -> RaceCard:
         race_name=race_name,
         distance_m=distance_m,
         surface=surface,
+        track_condition=track_condition,
         entries=entries,
     )
 

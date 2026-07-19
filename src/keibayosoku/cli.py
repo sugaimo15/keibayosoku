@@ -267,10 +267,15 @@ def cmd_predict(args: argparse.Namespace) -> None:
             continue
         distance_m = card_df["distance_m"].iloc[0] if "distance_m" in card_df.columns else None
         surface = card_df["surface"].iloc[0] if "surface" in card_df.columns else None
+        track_condition = card_df["track_condition"].iloc[0] if "track_condition" in card_df.columns else None
+        if pd.isna(track_condition):
+            track_condition = None
 
         from .predict.scoring import score_race_card
 
-        scored = score_race_card(card_df, history, distance_m=distance_m, surface=surface)
+        scored = score_race_card(
+            card_df, history, distance_m=distance_m, surface=surface, track_condition=track_condition
+        )
         path = storage.save_predictions(scored, args.date, race_id)
 
         top = scored[["predicted_rank", "horse_number", "horse_name", "score"]].head(3)

@@ -81,6 +81,7 @@ def save_race_card(card: RaceCard, date: str, base_dir: Path = RACE_CARDS_DIR) -
     df.insert(1, "race_name", card.race_name)
     df.insert(2, "surface", card.surface)
     df.insert(3, "distance_m", card.distance_m)
+    df.insert(4, "track_condition", card.track_condition)
 
     df.to_csv(path, index=False, encoding="utf-8-sig")
     return path
