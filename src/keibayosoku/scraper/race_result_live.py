@@ -18,7 +18,9 @@ from .race_result import COLUMN_ALIASES, ID_RE, RaceResult
 
 RACE_RESULT_LIVE_URL = "https://race.netkeiba.com/race/result.html?race_id={race_id}"
 
-BET_TYPE_LABELS = ["単勝", "複勝", "枠連", "馬連", "ワイド", "馬単", "三連複", "三連単"]
+BET_TYPE_LABELS = ["単勝", "複勝", "枠連", "馬連", "ワイド", "馬単", "3連複", "3連単"]
+# ページ上の表記(半角数字)を一般的な表記(漢数字)に寄せて保存する。
+BET_TYPE_DISPLAY = {"3連複": "三連複", "3連単": "三連単"}
 
 
 def _normalize_header(text: str) -> str:
@@ -183,7 +185,7 @@ def parse_payouts_live(soup: BeautifulSoup) -> list[dict]:
                         popularity = int(m.group(0))
                 payouts.append(
                     {
-                        "bet_type": label,
+                        "bet_type": BET_TYPE_DISPLAY.get(label, label),
                         "combination": combo,
                         "amount": amount,
                         "popularity": popularity,
