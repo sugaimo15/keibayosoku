@@ -7,6 +7,7 @@
   scrape-horse-history --race-id ...          出馬表の馬IDから各馬の過去成績を個別に取得してdata/horse_historiesに保存
   predict             --date YYYYMMDD         保存済みの出馬表と過去結果から予測しdata/predictionsに保存
   daily               --date YYYYMMDD         上記を一括実行 (GitHub Actionsから呼び出す想定)
+  backtest                                    バックフィル済みの過去レースでリークを除去した的中率・回収率を検証
 """
 from __future__ import annotations
 
@@ -339,6 +340,14 @@ def _safe_fetch_race_ids(client: NetkeibaClient, date_str: str, debug_on_empty: 
     return items
 
 
+def cmd_backtest(args: argparse.Namespace) -> None:
+    from .predict.backtest import format_report, run_backtest
+
+    print("[backtest] バックフィル済みの過去レースでリークを除去した検証を実行します...", file=sys.stderr)
+    result = run_backtest()
+    print(format_report(result))
+
+
 def cmd_daily(args: argparse.Namespace) -> None:
     results_ns = argparse.Namespace(date=args.results_date, race_ids=None, interval=args.interval)
     cmd_scrape_results(results_ns)
@@ -391,6 +400,11 @@ def build_parser() -> argparse.ArgumentParser:
     p_daily.add_argument("--results-date", default=None, help="YYYYMMDD (デフォルト: --dateの前日、結果取得対象)")
     p_daily.add_argument("--interval", type=float, default=common_args["interval"])
     p_daily.set_defaults(func=cmd_daily)
+
+    p_backtest = sub.add_parser(
+        "backtest", help="バックフィル済みの過去レースでリークを除去した的中率・回収率を検証"
+    )
+    p_backtest.set_defaults(func=cmd_backtest)
 
     return parser
 
