@@ -77,9 +77,16 @@ class RaceResult:
     weather: str | None = None
     track_condition: str | None = None
     entries: list[dict] = field(default_factory=list)
-    # 単勝/複勝/馬連/ワイド/馬単/三連複/三連単の払戻。db.netkeiba.com側は現状未対応で、
-    # race_result_live.py (race.netkeiba.com速報ページ) からのみ入る。
+    # 単勝/複勝/枠連/馬連/ワイド/馬単/三連複/三連単の払戻。
     payouts: list[dict] = field(default_factory=list)
+
+
+# db.netkeiba.com側の払戻テーブル(class="pay_table_01")で使われる表記。
+# race.netkeiba.com速報ページ(race_result_live.py)は半角数字で"3連複"/"3連単"だが、
+# db.netkeiba.com側は漢数字の"三連複"/"三連単"。保存済みデータとの表記統一のため、
+# こちらの漢数字表記をそのまま採用する。
+PAYOUT_BET_TYPE_LABELS = ["単勝", "複勝", "枠連", "馬連", "ワイド", "馬単", "三連複", "三連単"]
+_COMBO_SEPARATOR_RE = re.compile(r"\s*(?:-|→)\s*")
 
 
 def _normalize_header(text: str) -> str:
@@ -180,10 +187,59 @@ def parse_entries(soup: BeautifulSoup) -> list[dict]:
     return entries
 
 
+def _split_multi(text: str) -> list[str]:
+    """複勝/ワイドのように1つのセルに複数の値が改行区切りで入る場合を分割する。"""
+    return [p.strip() for p in re.split(r"[\n]+", text) if p.strip()]
+
+
+def parse_payouts(soup: BeautifulSoup) -> list[dict]:
+    """払戻テーブル(class="pay_table_01")をパースする。
+
+    db.netkeiba.com側は組番が既に1セル内に "3 - 6" / "6 → 3" のように結合されて
+    入っているため、race_result_live.py側のような複数行からのグループ化は不要。
+    馬単・三連単の"→"区切りも含めて"-"区切りに統一し、保存済みデータと表記を揃える。
+    """
+    payouts: list[dict] = []
+    for table in soup.find_all("table", class_="pay_table_01"):
+        for row in table.find_all("tr"):
+            cells = row.find_all(["th", "td"])
+            if len(cells) < 3:
+                continue
+            label = cells[0].get_text(strip=True)
+            if label not in PAYOUT_BET_TYPE_LABELS:
+                continue
+
+            combo_texts = _split_multi(cells[1].get_text("\n", strip=True))
+            amount_texts = _split_multi(cells[2].get_text("\n", strip=True))
+            popularity_texts = _split_multi(cells[3].get_text("\n", strip=True)) if len(cells) > 3 else []
+
+            n = max(len(combo_texts), len(amount_texts), 1)
+            for i in range(n):
+                combo_text = combo_texts[i] if i < len(combo_texts) else None
+                combo = _COMBO_SEPARATOR_RE.sub("-", combo_text) if combo_text else None
+                amount_text = amount_texts[i] if i < len(amount_texts) else None
+                amount = None
+                if amount_text:
+                    m = re.search(r"[\d,]+", amount_text)
+                    if m:
+                        amount = int(m.group(0).replace(",", ""))
+                popularity_text = popularity_texts[i] if i < len(popularity_texts) else None
+                popularity = None
+                if popularity_text:
+                    m = re.search(r"\d+", popularity_text)
+                    if m:
+                        popularity = int(m.group(0))
+                payouts.append(
+                    {"bet_type": label, "combination": combo, "amount": amount, "popularity": popularity}
+                )
+    return payouts
+
+
 def parse_race_result(race_id: str, html: str) -> RaceResult:
     soup = BeautifulSoup(html, "lxml")
     info = parse_race_info(soup)
     entries = parse_entries(soup)
+    payouts = parse_payouts(soup)
     return RaceResult(
         race_id=race_id,
         race_name=info.get("race_name"),
@@ -194,6 +250,7 @@ def parse_race_result(race_id: str, html: str) -> RaceResult:
         weather=info.get("weather"),
         track_condition=info.get("track_condition"),
         entries=entries,
+        payouts=payouts,
     )
 
 

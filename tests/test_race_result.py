@@ -33,6 +33,33 @@ def test_parse_race_result_entries():
     assert first["horse_weight"] == "492(+2)"
 
 
+def test_parse_race_result_payouts():
+    html = FIXTURE.read_text(encoding="utf-8")
+    result = parse_race_result("202506050812", html)
+
+    payouts = {(p["bet_type"], p["combination"]): p for p in result.payouts}
+    assert payouts[("単勝", "5")]["amount"] == 210
+    assert payouts[("単勝", "5")]["popularity"] == 1
+
+    fuku = [p for p in result.payouts if p["bet_type"] == "複勝"]
+    assert len(fuku) == 3
+    assert {p["combination"] for p in fuku} == {"5", "2", "8"}
+    assert payouts[("複勝", "8")]["amount"] == 340
+
+    assert payouts[("枠連", "1-3")]["amount"] == 480
+    assert payouts[("馬連", "2-5")]["amount"] == 560
+
+    wide = [p for p in result.payouts if p["bet_type"] == "ワイド"]
+    assert len(wide) == 3
+    assert payouts[("ワイド", "5-8")]["amount"] == 420
+
+    # 馬単・三連単は"→"区切りだが、他の組番と表記を揃えるため"-"に正規化する。
+    assert payouts[("馬単", "5-2")]["amount"] == 1020
+    assert payouts[("三連複", "2-5-8")]["amount"] == 3140
+    assert payouts[("三連単", "5-2-8")]["amount"] == 12600
+    assert payouts[("三連単", "5-2-8")]["popularity"] == 27
+
+
 def test_parse_race_result_hurdle_track_condition_label():
     """障害レースは "馬場: 良" ではなく "芝: 良" のように馬場種別自体がラベルになる。
 
