@@ -8,6 +8,7 @@
   predict             --date YYYYMMDD         保存済みの出馬表と過去結果から予測しdata/predictionsに保存
   daily               --date YYYYMMDD         上記を一括実行 (GitHub Actionsから呼び出す想定)
   backtest                                    バックフィル済みの過去レースでリークを除去した的中率・回収率を検証
+  train-model         [--eval-split YYYYMMDD] ロジスティック回帰の勝率モデルを学習してdata/model/に保存
 """
 from __future__ import annotations
 
@@ -261,6 +262,13 @@ def cmd_predict(args: argparse.Namespace) -> None:
         print(f"[predict] {args.date}の出馬表がありません。先にscrape-cardを実行してください。", file=sys.stderr)
         return
 
+    from .predict.ml_model import load_model, predict_win_probabilities
+
+    ml_artifact = load_model()
+    if ml_artifact is None:
+        print("[predict] MLモデル未学習のためルールベースのみで予測します(train-modelで学習可能)。", file=sys.stderr)
+    race_date_iso = f"{args.date[0:4]}-{args.date[4:6]}-{args.date[6:8]}"
+
     for csv_path in sorted(card_dir.glob("*.csv")):
         race_id = csv_path.stem
         card_df = pd.read_csv(csv_path)
@@ -277,11 +285,29 @@ def cmd_predict(args: argparse.Namespace) -> None:
         scored = score_race_card(
             card_df, history, distance_m=distance_m, surface=surface, track_condition=track_condition
         )
+        if ml_artifact is not None:
+            ml = predict_win_probabilities(
+                card_df,
+                history,
+                ml_artifact,
+                distance_m=distance_m,
+                surface=surface,
+                track_condition=track_condition,
+                race_date=race_date_iso,
+            )
+            scored = scored.merge(ml, on="horse_id", how="left")
         path = storage.save_predictions(scored, args.date, race_id)
 
         top = scored[["predicted_rank", "horse_number", "horse_name", "score"]].head(3)
         print(f"[predict] {race_id} ({card_df['race_name'].iloc[0] if 'race_name' in card_df.columns else ''})")
         print(top.to_string(index=False))
+        if ml_artifact is not None and "ml_ev" in scored.columns:
+            value_bets = scored[scored["ml_ev"] >= 1.0].sort_values("ml_ev", ascending=False)
+            for _, vb in value_bets.iterrows():
+                print(
+                    f"  [value] 馬番{vb['horse_number']} {vb['horse_name']} "
+                    f"勝率{vb['ml_win_prob']*100:.1f}% × オッズ{float(vb.get('win_odds') or 0):.1f} = EV {vb['ml_ev']:.2f}"
+                )
         print(f"  -> 保存: {path}")
 
 
@@ -348,6 +374,35 @@ def cmd_backtest(args: argparse.Namespace) -> None:
     print(format_report(result))
 
 
+def cmd_train_model(args: argparse.Namespace) -> None:
+    from .predict.ml_model import (
+        MODEL_PATH,
+        build_training_data,
+        evaluate_time_split,
+        save_model,
+        train_model,
+    )
+
+    print("[train-model] 学習データを作成します(レースごとに履歴を日付で絞り込むため数分かかります)...", file=sys.stderr)
+    training_df = build_training_data()
+    if training_df.empty:
+        print("[train-model] 学習データがありません。backfill-resultsを先に実行してください。", file=sys.stderr)
+        return
+    print(f"[train-model] 学習データ: {training_df['race_id'].nunique()}レース {len(training_df)}行", file=sys.stderr)
+
+    if args.eval_split:
+        split = f"{args.eval_split[0:4]}-{args.eval_split[4:6]}-{args.eval_split[6:8]}"
+        print(f"\n=== 時系列分割評価 ===")
+        print(evaluate_time_split(training_df, split))
+
+    if args.eval_only:
+        return
+
+    artifact = train_model(training_df)
+    path = save_model(artifact)
+    print(f"\n[train-model] 全{artifact['n_train_races']}レースで学習したモデルを保存 -> {path}")
+
+
 def cmd_daily(args: argparse.Namespace) -> None:
     results_ns = argparse.Namespace(date=args.results_date, race_ids=None, interval=args.interval)
     cmd_scrape_results(results_ns)
@@ -405,6 +460,13 @@ def build_parser() -> argparse.ArgumentParser:
         "backtest", help="バックフィル済みの過去レースでリークを除去した的中率・回収率を検証"
     )
     p_backtest.set_defaults(func=cmd_backtest)
+
+    p_train = sub.add_parser("train-model", help="ロジスティック回帰の勝率モデルを学習してdata/model/に保存")
+    p_train.add_argument("--eval-split", default=None, help="YYYYMMDD。指定すると時系列分割評価も出力する")
+    p_train.add_argument(
+        "--eval-only", action="store_true", help="評価のみ実行し、モデルの保存(全データでの再学習)を行わない"
+    )
+    p_train.set_defaults(func=cmd_train_model)
 
     return parser
 
