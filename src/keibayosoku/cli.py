@@ -24,7 +24,7 @@ from pathlib import Path
 
 from .scraper.horse_history import fetch_horse_history, fetch_horse_history_html
 from .scraper.race_card import fetch_race_card, fetch_race_card_html
-from .scraper.race_list import fetch_race_ids, fetch_race_list_html, find_sub_url_for_date
+from .scraper.race_list import fetch_race_ids, fetch_race_ids_db, fetch_race_list_html, find_sub_url_for_date
 from .scraper.race_result import fetch_race_result, fetch_race_result_html
 from .scraper.race_result_live import fetch_race_result_live, fetch_race_result_live_html
 from .predict.predict_race import predict
@@ -360,6 +360,17 @@ def _safe_fetch_race_ids(client: NetkeibaClient, date_str: str, debug_on_empty: 
     except RobotsDisallowedError as exc:
         print(f"robots.txtにより拒否されました: {exc}", file=sys.stderr)
         return []
+
+    if not items:
+        # race.netkeiba.com側の開催日タブは直近の開催週しかカバーしないため、
+        # 過去日付のバックフィルではdb.netkeiba.com側の日付別一覧に切り替える。
+        try:
+            items = fetch_race_ids_db(client, date_str)
+        except RobotsDisallowedError as exc:
+            print(f"robots.txtにより拒否されました(db側): {exc}", file=sys.stderr)
+            return []
+        if items:
+            print(f"[race-list] {date_str}: db.netkeiba.com側の一覧から{len(items)}レースを取得", file=sys.stderr)
 
     if not items and debug_on_empty:
         _dump_debug_html(client, date_str)

@@ -23,6 +23,11 @@ RACE_TOP_BASE_URL = "https://race.netkeiba.com/top/"
 DATE_LIST_URL = "https://race.netkeiba.com/top/race_list_get_date_list.html?kaisai_date={date}&encoding=UTF-8"
 RACE_ID_RE = re.compile(r"race_id=(\d{12})")
 
+# race.netkeiba.com側の開催日タブは直近の開催週しかカバーしないため、
+# 数年前の日付のバックフィルにはdb.netkeiba.com側の日付別レース一覧を使う。
+DB_RACE_LIST_URL = "https://db.netkeiba.com/race/list/{date}/"
+DB_RACE_ID_RE = re.compile(r"/race/(\d{12})/?(?:$|[?#])")
+
 
 @dataclass
 class RaceListItem:
@@ -83,3 +88,29 @@ def fetch_race_ids(client: NetkeibaClient, date: str) -> list[RaceListItem]:
 
     sub_html = client.get(sub_url, encoding="UTF-8")
     return parse_race_list(sub_html)
+
+
+def parse_db_race_list(html: str) -> list[RaceListItem]:
+    """db.netkeiba.comの日付別レース一覧ページからrace_idを抽出する。"""
+    soup = BeautifulSoup(html, "lxml")
+    seen: dict[str, RaceListItem] = {}
+    for a in soup.find_all("a", href=True):
+        m = DB_RACE_ID_RE.search(a["href"])
+        if not m:
+            continue
+        race_id = m.group(1)
+        if race_id in seen:
+            continue
+        race_name = a.get_text(strip=True) or None
+        seen[race_id] = RaceListItem(race_id=race_id, race_name=race_name, url=a["href"])
+    return list(seen.values())
+
+
+def fetch_race_ids_db(client: NetkeibaClient, date: str) -> list[RaceListItem]:
+    """db.netkeiba.com側からkaisai_dateのrace_id一覧を返す(過去日付のバックフィル用)。
+
+    race.netkeiba.com側(fetch_race_ids)は直近の開催週しかカバーしないため、
+    数年前の日付はこちらでないと取得できない。開催がない日は空リストを返す。
+    """
+    html = client.get(DB_RACE_LIST_URL.format(date=date), encoding="EUC-JP")
+    return parse_db_race_list(html)
