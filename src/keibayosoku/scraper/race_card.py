@@ -14,6 +14,7 @@
 """
 from __future__ import annotations
 
+import json
 import re
 from dataclasses import dataclass, field
 
@@ -27,8 +28,12 @@ ID_RE = re.compile(r"/(horse|jockey|trainer)/(?:result/recent/)?(\w+)/?(?:$|[?#]
 # 出馬表ページの単勝オッズ(<span id="odds-N_NN">)は静的HTMLの時点では"---.-"の
 # プレースホルダーしか入っておらず、実際の値はページ読み込み後にJavaScriptが
 # $.oddsUpdate({apiUrl:'.../api/api_get_jra_odds.html', raceId:...}) 経由で
-# 非同期取得して埋め込んでいる。調査用に、このAPIを直接叩けるようにしておく
-# (パラメータ・レスポンス形式は未確定。fetch_odds_api_debugで実データを確認する)。
+# 非同期取得して埋め込んでいる。実データで確認したレスポンス形式:
+#   {"status":"result","data":{"odds":{"1":{"01":["18.4","0.0","6"],...},
+#                                      "2":{"01":["2.3","7.4","6"],...}}}, ...}
+#   "1"=単勝([オッズ,"0.0",人気順位]), "2"=複勝([下限,上限,人気順位])。
+# まだ馬券発売が始まっていないレースは {"status":"middle","data":"",...} を返す
+# (エラーではなく、単に未発表という意味)。
 ODDS_API_URL = "https://race.netkeiba.com/api/api_get_jra_odds.html?race_id={race_id}&type=1"
 
 
@@ -143,6 +148,52 @@ def fetch_race_card(client: NetkeibaClient, race_id: str) -> RaceCard:
 
 
 def fetch_odds_api_debug(client: NetkeibaClient, race_id: str) -> str:
-    """調査用: オッズ非同期取得APIの生レスポンスを返す(パラメータ・形式は未確定)。"""
+    """調査用: オッズ非同期取得APIの生レスポンスを返す。"""
     url = ODDS_API_URL.format(race_id=race_id)
     return client.get(url, encoding="utf-8")
+
+
+def parse_odds_response(json_text: str) -> dict[int, dict]:
+    """オッズAPI(api_get_jra_odds.html)のレスポンスをパースする。
+
+    馬券発売前で"status"が"result"/"yoso"以外(例: "middle")の場合はデータが
+    無いので空dictを返す(エラーではなく正常系として扱う)。
+    戻り値: {馬番: {"win_odds": float, "popularity": int,
+                   "place_odds_min": float, "place_odds_max": float}}
+    """
+    try:
+        obj = json.loads(json_text)
+    except (json.JSONDecodeError, TypeError):
+        return {}
+    if obj.get("status") not in ("result", "yoso"):
+        return {}
+
+    odds_by_type = obj.get("data", {}).get("odds", {})
+    win = odds_by_type.get("1", {})
+    place = odds_by_type.get("2", {})
+
+    result: dict[int, dict] = {}
+    for horse_number_str, values in win.items():
+        try:
+            horse_number = int(horse_number_str)
+            result[horse_number] = {"win_odds": float(values[0]), "popularity": int(values[2])}
+        except (ValueError, IndexError, TypeError):
+            continue
+    for horse_number_str, values in place.items():
+        try:
+            horse_number = int(horse_number_str)
+        except ValueError:
+            continue
+        entry = result.setdefault(horse_number, {})
+        try:
+            entry["place_odds_min"] = float(values[0])
+            entry["place_odds_max"] = float(values[1])
+        except (IndexError, ValueError, TypeError):
+            continue
+    return result
+
+
+def fetch_odds(client: NetkeibaClient, race_id: str) -> dict[int, dict]:
+    """レースの単勝/複勝オッズを非同期APIから取得する。未発表の場合は空dict。"""
+    response = client.get(ODDS_API_URL.format(race_id=race_id), encoding="utf-8")
+    return parse_odds_response(response)

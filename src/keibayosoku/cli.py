@@ -23,7 +23,7 @@ from .scraper.http import NetkeibaClient, RobotsDisallowedError
 from pathlib import Path
 
 from .scraper.horse_history import fetch_horse_history, fetch_horse_history_html
-from .scraper.race_card import fetch_odds_api_debug, fetch_race_card, fetch_race_card_html
+from .scraper.race_card import fetch_odds, fetch_odds_api_debug, fetch_race_card, fetch_race_card_html
 from .scraper.race_list import fetch_race_ids, fetch_race_ids_db, fetch_race_list_html, find_sub_url_for_date
 from .scraper.race_result import fetch_race_result, fetch_race_result_html
 from .scraper.race_result_live import fetch_race_result_live, fetch_race_result_live_html
@@ -180,6 +180,28 @@ def cmd_scrape_card(args: argparse.Namespace) -> None:
                     _dump_one(race_id, "odds_api", odds_resp)
                 except Exception as exc:  # noqa: BLE001 - デバッグ用途なので握りつぶして継続
                     print(f"[debug] {race_id}: オッズAPIの生レスポンス取得に失敗: {exc}", file=sys.stderr)
+
+        try:
+            odds_map = fetch_odds(client, race_id)
+        except RobotsDisallowedError as exc:
+            print(f"[scrape-card] {race_id}: オッズ取得スキップ ({exc})", file=sys.stderr)
+            odds_map = {}
+        except Exception as exc:  # noqa: BLE001 - オッズ取得失敗時も出馬表自体は保存を続ける
+            print(f"[scrape-card] {race_id}: オッズ取得に失敗 ({exc})", file=sys.stderr)
+            odds_map = {}
+
+        if odds_map:
+            for entry in card.entries:
+                try:
+                    horse_number = int(entry.get("horse_number"))
+                except (TypeError, ValueError):
+                    continue
+                info = odds_map.get(horse_number)
+                if info:
+                    entry["win_odds"] = str(info["win_odds"])
+                    entry["popularity"] = str(info["popularity"])
+        else:
+            print(f"[scrape-card] {race_id}: オッズ未発表(馬券発売前)", file=sys.stderr)
 
         path = storage.save_race_card(card, args.date)
         print(f"[scrape-card] {race_id}: {len(card.entries)}頭分を保存 -> {path}")
