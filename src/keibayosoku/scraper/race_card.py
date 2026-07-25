@@ -23,7 +23,16 @@ from bs4 import BeautifulSoup
 from .http import NetkeibaClient
 
 RACE_CARD_URL = "https://race.netkeiba.com/race/shutuba.html?race_id={race_id}"
+# 海外レース(凱旋門賞・キングジョージ等、netkeibaが日本語で紹介しているもの)は
+# race_idに英字が入り("2026A0010105"等)、専用のshutuba_abroad.htmlで出馬表が
+# 提供される。テーブルのクラス名は国内版と共通で、parse_race_card()がそのまま
+# 使える(馬体重列が無いため horse_weight は空になる程度の違い)。
+RACE_CARD_ABROAD_URL = "https://race.netkeiba.com/race/shutuba_abroad.html?race_id={race_id}"
 ID_RE = re.compile(r"/(horse|jockey|trainer)/(?:result/recent/)?(\w+)/?(?:$|[?#])")
+
+
+def _is_abroad_race_id(race_id: str) -> bool:
+    return not race_id.isdigit()
 
 # 出馬表ページの単勝オッズ(<span id="odds-N_NN">)は静的HTMLの時点では"---.-"の
 # プレースホルダーしか入っておらず、実際の値はページ読み込み後にJavaScriptが
@@ -137,8 +146,11 @@ def parse_race_card(race_id: str, html: str) -> RaceCard:
 
 
 def fetch_race_card_html(client: NetkeibaClient, race_id: str) -> str:
-    """デバッグ用: 出馬表ページの生HTMLを返す。"""
-    url = RACE_CARD_URL.format(race_id=race_id)
+    """デバッグ用: 出馬表ページの生HTMLを返す。race_idが英字を含む場合は海外レース
+    ページ(shutuba_abroad.html)を取得する。
+    """
+    template = RACE_CARD_ABROAD_URL if _is_abroad_race_id(race_id) else RACE_CARD_URL
+    url = template.format(race_id=race_id)
     return client.get(url, encoding="utf-8")
 
 

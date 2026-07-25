@@ -181,14 +181,16 @@ def cmd_scrape_card(args: argparse.Namespace) -> None:
                 except Exception as exc:  # noqa: BLE001 - デバッグ用途なので握りつぶして継続
                     print(f"[debug] {race_id}: オッズAPIの生レスポンス取得に失敗: {exc}", file=sys.stderr)
 
-        try:
-            odds_map = fetch_odds(client, race_id)
-        except RobotsDisallowedError as exc:
-            print(f"[scrape-card] {race_id}: オッズ取得スキップ ({exc})", file=sys.stderr)
-            odds_map = {}
-        except Exception as exc:  # noqa: BLE001 - オッズ取得失敗時も出馬表自体は保存を続ける
-            print(f"[scrape-card] {race_id}: オッズ取得に失敗 ({exc})", file=sys.stderr)
-            odds_map = {}
+        # 海外レース(race_idに英字を含む)はshutuba_abroad.html自体に確定オッズが
+        # 直接入っているため、JRA専用の非同期オッズAPIは呼ばない。
+        odds_map = {}
+        if race_id.isdigit():
+            try:
+                odds_map = fetch_odds(client, race_id)
+            except RobotsDisallowedError as exc:
+                print(f"[scrape-card] {race_id}: オッズ取得スキップ ({exc})", file=sys.stderr)
+            except Exception as exc:  # noqa: BLE001 - オッズ取得失敗時も出馬表自体は保存を続ける
+                print(f"[scrape-card] {race_id}: オッズ取得に失敗 ({exc})", file=sys.stderr)
 
         if odds_map:
             for entry in card.entries:
@@ -200,7 +202,7 @@ def cmd_scrape_card(args: argparse.Namespace) -> None:
                 if info:
                     entry["win_odds"] = str(info["win_odds"])
                     entry["popularity"] = str(info["popularity"])
-        else:
+        elif race_id.isdigit():
             print(f"[scrape-card] {race_id}: オッズ未発表(馬券発売前)", file=sys.stderr)
 
         path = storage.save_race_card(card, args.date)
