@@ -24,6 +24,13 @@ from .http import NetkeibaClient
 RACE_CARD_URL = "https://race.netkeiba.com/race/shutuba.html?race_id={race_id}"
 ID_RE = re.compile(r"/(horse|jockey|trainer)/(?:result/recent/)?(\w+)/?(?:$|[?#])")
 
+# 出馬表ページの単勝オッズ(<span id="odds-N_NN">)は静的HTMLの時点では"---.-"の
+# プレースホルダーしか入っておらず、実際の値はページ読み込み後にJavaScriptが
+# $.oddsUpdate({apiUrl:'.../api/api_get_jra_odds.html', raceId:...}) 経由で
+# 非同期取得して埋め込んでいる。調査用に、このAPIを直接叩けるようにしておく
+# (パラメータ・レスポンス形式は未確定。fetch_odds_api_debugで実データを確認する)。
+ODDS_API_URL = "https://race.netkeiba.com/api/api_get_jra_odds.html?race_id={race_id}&type=1"
+
 
 @dataclass
 class RaceCard:
@@ -133,3 +140,9 @@ def fetch_race_card_html(client: NetkeibaClient, race_id: str) -> str:
 def fetch_race_card(client: NetkeibaClient, race_id: str) -> RaceCard:
     html = fetch_race_card_html(client, race_id)
     return parse_race_card(race_id, html)
+
+
+def fetch_odds_api_debug(client: NetkeibaClient, race_id: str) -> str:
+    """調査用: オッズ非同期取得APIの生レスポンスを返す(パラメータ・形式は未確定)。"""
+    url = ODDS_API_URL.format(race_id=race_id)
+    return client.get(url, encoding="utf-8")
