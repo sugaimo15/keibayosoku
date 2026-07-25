@@ -404,6 +404,14 @@ def _safe_fetch_race_ids(client: NetkeibaClient, date_str: str, debug_on_empty: 
     return items
 
 
+def cmd_debug_fetch(args: argparse.Namespace) -> None:
+    """調査用: 任意のURLを取得し生HTMLをdebug/に保存する(新しいページ構造の調査に使う)。"""
+    client = NetkeibaClient(min_interval_sec=args.interval)
+    html = client.get(args.url, encoding=args.encoding)
+    label = args.label or "debug_fetch"
+    _dump_one(label, "raw", html)
+
+
 def cmd_backtest(args: argparse.Namespace) -> None:
     from .predict.backtest import format_report, run_backtest
 
@@ -508,6 +516,13 @@ def build_parser() -> argparse.ArgumentParser:
         "--eval-only", action="store_true", help="評価のみ実行し、モデルの保存(全データでの再学習)を行わない"
     )
     p_train.set_defaults(func=cmd_train_model)
+
+    p_debug_fetch = sub.add_parser("debug-fetch", help="調査用: 任意のURLを取得しdebug/に生HTMLを保存")
+    p_debug_fetch.add_argument("--url", required=True, help="取得するURL")
+    p_debug_fetch.add_argument("--label", default=None, help="保存ファイル名に使う識別子(省略時はdebug_fetch)")
+    p_debug_fetch.add_argument("--encoding", default="utf-8", help="レスポンスのエンコーディング(デフォルト: utf-8)")
+    p_debug_fetch.add_argument("--interval", type=float, default=common_args["interval"])
+    p_debug_fetch.set_defaults(func=cmd_debug_fetch)
 
     return parser
 
