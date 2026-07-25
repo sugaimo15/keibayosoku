@@ -164,12 +164,11 @@ def cmd_scrape_card(args: argparse.Namespace) -> None:
 
         first = card.entries[0]
         looks_broken = not first.get("horse_number") or not first.get("waku")
-        if looks_broken and not dumped_sample:
+        should_dump = (looks_broken or args.dump_html) and not dumped_sample
+        if should_dump:
             dumped_sample = True
-            print(
-                f"[debug] {race_id}: waku/horse_numberが空のためセレクタ不一致の疑い。原因調査用に生HTMLを保存します。",
-                file=sys.stderr,
-            )
+            reason = "waku/horse_numberが空のためセレクタ不一致の疑い" if looks_broken else "--dump-html指定"
+            print(f"[debug] {race_id}: {reason}。原因調査用に生HTMLを保存します。", file=sys.stderr)
             try:
                 card_html = fetch_race_card_html(client, race_id)
                 _dump_one(race_id, "race_card", card_html)
@@ -447,6 +446,9 @@ def build_parser() -> argparse.ArgumentParser:
     p_card.add_argument("--date", default=_today_str(), help="YYYYMMDD (デフォルト: 当日)")
     p_card.add_argument("--race-id", dest="race_ids", action="append", help="race_idを直接指定(複数可)")
     p_card.add_argument("--interval", type=float, default=common_args["interval"])
+    p_card.add_argument(
+        "--dump-html", action="store_true", help="セレクタ不一致の疑いが無くても先頭レースの生HTMLを保存する(調査用)"
+    )
     p_card.set_defaults(func=cmd_scrape_card)
 
     p_horse_hist = sub.add_parser("scrape-horse-history", help="出馬表の馬IDから各馬の過去成績を個別に取得")
