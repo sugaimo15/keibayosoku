@@ -455,7 +455,7 @@ def cmd_daily(args: argparse.Namespace) -> None:
     results_ns = argparse.Namespace(date=args.results_date, race_ids=None, interval=args.interval)
     cmd_scrape_results(results_ns)
 
-    card_ns = argparse.Namespace(date=args.date, race_ids=None, interval=args.interval)
+    card_ns = argparse.Namespace(date=args.date, race_ids=None, interval=args.interval, dump_html=False)
     cmd_scrape_card(card_ns)
 
     predict_ns = argparse.Namespace(date=args.date)
